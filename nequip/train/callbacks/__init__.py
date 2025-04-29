@@ -2,7 +2,7 @@
 from .softadapt import SoftAdapt
 from .loss_coeff_scheduler import LossCoefficientScheduler
 from .loss_coeff_monitor import LossCoefficientMonitor
-from .write_xyz import TestTimeXYZFileWriter
+from .write_xyz import TestTimeXYZFileWriter, ValidationTimeXYZFileWriter
 from .wandb_watch import WandbWatch
 
 __all__ = [
@@ -10,5 +10,6 @@ __all__ = [
     LossCoefficientScheduler,
     LossCoefficientMonitor,
     TestTimeXYZFileWriter,
+    ValidationTimeXYZFileWriter,
     WandbWatch,
 ]
