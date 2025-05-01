@@ -176,6 +176,9 @@ class ValidationTimeXYZFileWriter(Callback):
         self.chemical_symbols = chemical_symbols
 
     def on_train_end(self, trainer, pl_module):
+        # only do anything on the global‐zero (main) process
+        if not trainer.is_global_zero:
+            return
         # Make sure the datamodule is available
         if not trainer.datamodule:
             print("No datamodule found; cannot run validation inference.")
