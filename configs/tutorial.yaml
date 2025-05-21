@@ -7,6 +7,11 @@
 # With hydra's instantiation (notice the `_target_`s everywhere), the config file (almost) directly corresponds to instantiating objects as one would normally do in Python.
 # Much of the infrastructure is based on PyTorch Lightning (https://lightning.ai/docs/pytorch/stable/), such as the use of Lightning's Trainer, DataModule, LightningModule, Callback objects.
 
+# NequIP also registers a number of custom resolvers to allow users to do basic integer arithmetic directly in the config file:
+# - Integer multiplication: `area: ${int_mul:${width},${height}}`
+# - Integer division: `half_width: ${int_div:${width},2}`
+# These resolvers will throw errors if the inputs are not integers or if division is not exact.
+
 # ===========
 #     RUN
 # ===========
@@ -210,6 +215,11 @@ training_module:
   model:
     _target_: nequip.model.NequIPGNNModel
 
+    # If you have PyTorch >= 2.6.0 installed, and are training on GPUs, the following line uses torch.compile to speed up training
+    # for more details, see https://nequip.readthedocs.io/en/latest/guide/advanced_training.html#pytorch-2-0-compiled-training
+    compile_mode: compile
+    # ^ if you're using PyTorch <= 2.6.0, an error will be thrown -- comment out the line to avoid it
+
     # == basic model params ==
     seed: 456
     model_dtype: float32
@@ -230,6 +240,11 @@ training_module:
     # == radial network ==
     radial_mlp_depth: 2            # number of radial layers, usually 1-3 works best, smaller is faster
     radial_mlp_width: 64           # number of hidden neurons in radial function, smaller is faster
+    #^ we could have programatically set `radial_mlp_width` to be twice `num_features` using NequIP's built in `int_mul` resolver, e.g.
+    # radial_mlp_width: ${int_mul:${num_features},2}
+    # the NequIP framework implements `int_mul` and `int_div`
+
+    # see https://nequip.readthedocs.io/en/latest/guide/model.html to understand the following hyperparameters
 
     # dataset statistics used to inform the model's initial parameters for normalization, shifting and rescaling
     # we use omegaconf's resolvers (https://omegaconf.readthedocs.io/en/2.3_branch/usage.html#resolvers)
@@ -241,6 +256,13 @@ training_module:
     # == per-type per-atom scales and shifts ==
     per_type_energy_scales: ${training_data_stats:per_type_forces_rms}
     per_type_energy_shifts: ${training_data_stats:per_atom_energy_mean}
+    # ^ this should typically be the isolated atom energies for your dataset
+    #   provided as a dict, e.g.
+    # per_type_energy_shifts: 
+    #   C: 1.234
+    #   H: 2.345
+    #   O: 3.456
+    #   Cu: 4.567
     per_type_energy_scales_trainable: false
     per_type_energy_shifts_trainable: false
 

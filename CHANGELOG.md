@@ -8,6 +8,36 @@ Most recent change on the top.
 
 ## Unreleased
 
+
+## [0.8.0]
+
+### Added
+- MD22 datamodule
+- `PerTypeScaleShift` model modifier to enable changing the per-type atomic energy scales and shifts of a pretrained model for fine-tuning
+
+### Changed
+- [Breaking] packaged model file metadata format: NOTE that packaged models before this version will no longer be compatible, and models must be repackaged from checkpoints
+- [Breaking] `nequip-package` API: users must now specify `nequip-package build` to construct packaged model files or `nequip-package info` to inspect the metadata of packaged model files
+- `per_type_energy_scales` and `per_type_energy_shifts` are expected to be in dict format; warnings will be thrown if they are provided as lists, and this will become errors in later major releases
+- [Breaking] `InteractionBlock` of NequIP model refactored such that checkpoint files from previous versions will not work with this version
+
+### Removed
+- [Breaking] train-time TorchScript
+
+## [0.7.1]
+
+### Fixed
+- Update outdated descriptions for `parity_plot.py`
+
+### Added
+- Increase docs coverage
+- `StressSignFlipTransform` as a data transform to flip the sign of datasets that come with the opposite stress sign convention as used in the NequIP framework
+- `int_div` and `int_mul` resolvers for integer arithmetic in config files, e.g. `half_width: ${int_div:${width},2}`
+
+### Changed
+- Renamed `examples` -> `misc` directory
+
+
 ## [0.7.0]
 A major backwards-incompatible update with breaking changes throughout the code.
 

@@ -5,8 +5,9 @@ from e3nn.util.jit import script
 
 from ._workflow_utils import set_workflow_state
 from ._compile_utils import COMPILE_TARGET_DICT
-from nequip.model.utils import _EAGER_MODEL_KEY, _COMPILE_TIME_AOTINDUCTOR_KEY
+from nequip.model.utils import _EAGER_MODEL_KEY
 from nequip.model.from_save import ModelFromPackage, ModelFromCheckpoint
+from nequip.model.modify_utils import modify
 from nequip.train.lightning import _SOLE_MODEL_KEY
 from nequip.data import AtomicDataDict, compile_utils
 from nequip.utils.logger import RankedLogger
@@ -15,7 +16,6 @@ from nequip.utils.global_state import set_global_state, get_latest_global_state
 from omegaconf import OmegaConf
 import hydra
 
-import os
 import yaml
 import argparse
 import pathlib
@@ -25,15 +25,6 @@ from typing import Final
 # === setup logging ===
 hydra.core.utils.configure_log(None)
 logger = RankedLogger(__name__, rank_zero_only=True)
-
-# === override model to compile ===
-# we default to using the best performance compilation option, e.g. to use a custom kernel with AOT Inductor
-# this env var can be toggled to always compile from eager mode
-_ALWAYS_COMPILE_FROM_EAGER: Final[bool] = bool(
-    int(os.getenv("NEQUIP_ALWAYS_COMPILE_FROM_EAGER", 0))
-)
-if _ALWAYS_COMPILE_FROM_EAGER:
-    logger.info("`NEQUIP_ALWAYS_COMPILE_FROM_EAGER=1` detected")
 
 # hardcode a global seed for `nequip-compile`
 _COMPILE_SEED: Final[int] = 1
@@ -102,6 +93,14 @@ def main(args=None):
         help="whether to use TF32 or not",
         action=argparse.BooleanOptionalAction,
         default=False,
+    )
+
+    parser.add_argument(
+        "--modifiers",
+        help="modifiers to apply to the model before compiling",
+        nargs="+",
+        type=str,
+        default=[],
     )
 
     # args specific to export
@@ -182,25 +181,19 @@ def main(args=None):
         ), "`output-path` must end with the `.nequip.pt2` extension for `aotinductor` compile mode"
 
     # === load model ===
-    # get relevant model build types (used by both checkpoint and package logic paths)
-    model_compile_mode = {
-        "torchscript": _EAGER_MODEL_KEY,
-        "aotinductor": (
-            _EAGER_MODEL_KEY
-            if _ALWAYS_COMPILE_FROM_EAGER
-            else _COMPILE_TIME_AOTINDUCTOR_KEY
-        ),
-    }[args.mode]
+    # only eager models are loaded
     logger.info(f"Loading model for compilation from {args.input_path} ...")
     # use package load path if extension matches, otherwise assume checkpoint file
     use_ckpt = not str(args.input_path).endswith(".nequip.zip")
     if use_ckpt:
-        model = ModelFromCheckpoint(args.input_path, compile_mode=model_compile_mode)
+        model = ModelFromCheckpoint(args.input_path, compile_mode=_EAGER_MODEL_KEY)
     else:
-        # TODO: (maybe) more robust system that goes down a priority list for packaged models to load
-        # e.g. if doing `aotinductor` compile, look for `aotinductor` model first, but fallback to loading `eager` packaged model for `nequip-compile`
-        # for now we just use the same `model_compile_mode`
-        model = ModelFromPackage(args.input_path, compile_mode=model_compile_mode)
+        model = ModelFromPackage(args.input_path, compile_mode=_EAGER_MODEL_KEY)
+
+    # === modify model ===
+    # for now, we restrict modifiers to those without arguments, i.e. accelerations
+    # to be consistent with the API of `nequip.model.modify`, the model is a `ModuleDict`
+    model = modify(model, [{"modifier": modifier} for modifier in args.modifiers])
 
     model = model[args.model]
     # ^ `ModuleDict` of `GraphModel` is loaded, we then select the desired `GraphModel` (`args.model` defaults to work for single model case)

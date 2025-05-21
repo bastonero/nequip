@@ -14,16 +14,16 @@ from .utils import (
     get_current_compile_mode,
     _COMPILE_MODE_OPTIONS,
     _EAGER_MODEL_KEY,
-    _TRAIN_TIME_SCRIPT_KEY,
-    _COMPILE_TIME_AOTINDUCTOR_KEY,
 )
 from nequip.scripts._workflow_utils import get_workflow_state
 from nequip.utils import get_current_code_versions
 from nequip.utils.logger import RankedLogger
 
+import yaml
 import hydra
+import os
 import warnings
-from typing import List, Dict, Union, Any
+from typing import List, Dict, Any
 
 # === setup logging ===
 logger = RankedLogger(__name__, rank_zero_only=True)
@@ -39,6 +39,19 @@ def _check_compile_mode(compile_mode: str, client: str, exclude_keys: List[str] 
     ), f"`compile_mode={compile_mode}` is not recognized for `{client}`, only the following are supported: {allowed_options}"
 
 
+def _check_file_exists(file_path: str, file_type: str):
+    if not os.path.isfile(file_path):
+        assert file_type in ("checkpoint", "package")
+        client = (
+            "`ModelFromCheckpoint`"
+            if file_type == "checkpoint"
+            else "`ModelFromPackage`"
+        )
+        raise RuntimeError(
+            f"{file_type} file provided at `{file_path}` is not found. NOTE: Any process that loads a checkpoint produced from training runs based on {client} will look for the original {file_type} file at the location specified during training. It is also recommended to use full paths (instead or relative paths) to avoid potential errors."
+        )
+
+
 def ModelFromCheckpoint(checkpoint_path: str, compile_mode: str = _EAGER_MODEL_KEY):
     """Builds model from a NequIP framework checkpoint file.
 
@@ -48,17 +61,18 @@ def ModelFromCheckpoint(checkpoint_path: str, compile_mode: str = _EAGER_MODEL_K
       model:
         _target_: nequip.model.ModelFromCheckpoint
         checkpoint_path: path/to/ckpt
-        compile_mode: eager/script/compile
+        compile_mode: eager/compile
+
+    .. warning::
+        DO NOT CHANGE the directory structure or location of the checkpoint file if this model loader is used for training. Any process that loads a checkpoint produced from training runs originating from a package file will look for the original package file at the location specified during training. It is also recommended to use full paths (instead or relative paths) to avoid potential errors.
 
     Args:
         checkpoint_path (str): path to a ``nequip`` framework checkpoint file
-        compile_mode (str): ``eager``, ``script``, or ``compile`` allowed for training (note that ``script`` is not allowed if the checkpoint originates from a ``ModelFromPackage``)
+        compile_mode (str): ``eager`` or ``compile`` allowed for training
     """
-    # ^ there are other `compile_mode` options for internal use that are hidden from users
-    exclude_modes = (
-        [_COMPILE_TIME_AOTINDUCTOR_KEY] if get_workflow_state() == "train" else []
-    )
-    _check_compile_mode(compile_mode, "ModelFromCheckpoint", exclude_modes)
+    # === sanity checks ===
+    _check_file_exists(file_path=checkpoint_path, file_type="checkpoint")
+    _check_compile_mode(compile_mode, "ModelFromCheckpoint")
     logger.info(f"Loading model from checkpoint file: {checkpoint_path} ...")
 
     # === load checkpoint and extract info ===
@@ -95,14 +109,25 @@ def ModelFromCheckpoint(checkpoint_path: str, compile_mode: str = _EAGER_MODEL_K
 
 # most of the complexity for `ModelFromPackage` is due to the need to keep track of the `Importer` if we ever repackage
 # see `nequip/scripts/package.py` to get the full picture of how they interact
+# we expect the following variable to only be used during `nequip-package`
 
-# main client `nequip-package` is expected to manipulate this dict via `_get_packaged_models`
-_PACKAGED_MODELS: Dict[str, Union[torch.nn.Module, torch.package.PackageImporter]] = {}
+_PACKAGE_TIME_SHARED_IMPORTER = None
 
 
-def _get_packaged_models():
-    global _PACKAGED_MODELS
-    return _PACKAGED_MODELS
+def _get_shared_importer():
+    global _PACKAGE_TIME_SHARED_IMPORTER
+    return _PACKAGE_TIME_SHARED_IMPORTER
+
+
+def _get_package_metadata(imp):
+    """Load packaged model metadata."""
+    pkg_metadata: Dict[str, Any] = yaml.safe_load(
+        imp.load_text(package="model", resource="package_metadata.txt")
+    )
+    assert int(pkg_metadata["package_version_id"]) > 0
+    # ^ extra sanity check since saving metadata in txt files was implemented in packaging version 1
+
+    return pkg_metadata
 
 
 def ModelFromPackage(package_path: str, compile_mode: str = _EAGER_MODEL_KEY):
@@ -117,16 +142,14 @@ def ModelFromPackage(package_path: str, compile_mode: str = _EAGER_MODEL_KEY):
         compile_mode: eager/compile
 
     .. warning::
-        Refrain from moving the package file if this model loader is used for training. Any process that loads a checkpoint produced from training runs originating from a package file will look for the original package file at the location specified during training.
+        DO NOT CHANGE the directory structure or location of the package file if this model loader is used for training. Any process that loads a checkpoint produced from training runs originating from a package file will look for the original package file at the location specified during training. It is also recommended to use full paths (instead or relative paths) to avoid potential errors.
 
     Args:
         package_path (str): path to NequIP framework packaged model with the ``.nequip.zip`` extension (an error will be thrown if the file has a different extension)
         compile_mode (str): ``eager`` or ``compile`` allowed for training
     """
-    # ^ there are other `compile_mode` options for internal use that are hidden from users
-    workflow_state = get_workflow_state()
-
-    # === sanity check file extension ===
+    # === sanity checks ===
+    _check_file_exists(file_path=package_path, file_type="package")
     assert str(package_path).endswith(
         ".nequip.zip"
     ), f"NequIP framework packaged files must have the `.nequip.zip` extension but found {str(package_path)}"
@@ -138,9 +161,8 @@ def ModelFromPackage(package_path: str, compile_mode: str = _EAGER_MODEL_KEY):
     compile_mode = cm if override else compile_mode
 
     # === sanity check compile modes ===
-    exclude_modes = [_COMPILE_TIME_AOTINDUCTOR_KEY] if workflow_state == "train" else []
-    exclude_modes += [_TRAIN_TIME_SCRIPT_KEY]
-    _check_compile_mode(compile_mode, "ModelFromPackage", exclude_modes)
+    workflow_state = get_workflow_state()
+    _check_compile_mode(compile_mode, "ModelFromPackage")
 
     # === load model ===
     logger.info(f"Loading model from package file: {package_path} ...")
@@ -152,43 +174,36 @@ def ModelFromPackage(package_path: str, compile_mode: str = _EAGER_MODEL_KEY):
             category=UserWarning,
             module="torch.package.package_importer",
         )
-        imp = torch.package.PackageImporter(package_path)
 
-        # load packaging metadata that can be used to condition loading logic
-        pkg_metadata: Dict[str, Any] = imp.load_pickle(
-            package="model", resource="package_metadata.pkl"
-        )
+        # during `nequip-package`, we need to use the same importer for all the models for successful repackaging
+        # see https://pytorch.org/docs/stable/package.html#re-export-an-imported-object
+        if workflow_state == "package":
+            global _PACKAGE_TIME_SHARED_IMPORTER
+            imp = _PACKAGE_TIME_SHARED_IMPORTER
+            # we load the importer from `package_path` for the first time
+            if imp is None:
+                imp = torch.package.PackageImporter(package_path)
+                _PACKAGE_TIME_SHARED_IMPORTER = imp
+            # if it's not `None`, it means we've previously loaded a model during `nequip-package` and should keep using the same importer
+        else:
+            # if not doing `nequip-package`, we just load a new importer every time `ModelFromPackage` is called
+            imp = torch.package.PackageImporter(package_path)
+
+        # do sanity checking with available models
+        pkg_metadata = _get_package_metadata(imp)
         available_models = pkg_metadata["available_models"]
         # throw warning if desired `compile_mode` is not available, and default to eager
         if compile_mode not in available_models:
             warnings.warn(
-                f"Requested `{compile_mode}` model is not present in the package file ({package_path}). `nequip-{workflow_state}` task will default to using the `_EAGER_MODEL_KEY` model."
+                f"Requested `{compile_mode}` model is not present in the package file ({package_path}). `nequip-{workflow_state}` task will default to using the `{_EAGER_MODEL_KEY}` model."
             )
             compile_mode = _EAGER_MODEL_KEY
 
-        # if we're loading for `nequip-package` (through `ModelFromCheckpoint`)
-        # we load every model type and save it, along with the importer
-        # `nequip-package` will query `_PACKAGED_MODELS` and handle the necessary logic including
-        # 1. loading the state dict of the model returned by this function (that will get updated by the checkpoint), into the other model types
-        # 2. handle the repackaging logic (https://pytorch.org/docs/stable/package.html#re-export-an-imported-object)
-        if workflow_state == "package":
-            global _PACKAGED_MODELS
-            _PACKAGED_MODELS.update({"importer": imp})
-            # note that the loop is over `available_models`
-            for mode in available_models:
-                model = imp.load_pickle(
-                    package="model",
-                    resource=f"{mode}_model.pkl",
-                    map_location="cpu",
-                )
-                _PACKAGED_MODELS.update({mode: model})
-            model = _PACKAGED_MODELS[compile_mode]
-        else:
-            model = imp.load_pickle(
-                package="model",
-                resource=f"{compile_mode}_model.pkl",
-                map_location="cpu",
-            )
+        model = imp.load_pickle(
+            package="model",
+            resource=f"{compile_mode}_model.pkl",
+            map_location="cpu",
+        )
 
     # NOTE: model returned is not a GraphModel object tied to the `nequip` in current Python env, but a GraphModel object from the packaged zip file
     return model

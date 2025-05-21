@@ -1,4 +1,4 @@
-# The NequIP workflow
+# The NequIP Workflow
 
 ## Overview
 
@@ -39,7 +39,7 @@ nequip-train -cp full/path/to/config/directory -cn config_name.yaml ++ckpt_path=
 where we have used Hydra's [override syntax](https://hydra.cc/docs/advanced/override_grammar/basic/) (`++`). Note how one must still specify the config file used. Training from a checkpoint will always use the model from the checkpoint file, but other training hyperparameters (dataset, loss, metrics, callbacks, etc) is determined by the config file passed in the restart `nequip-train` (and can therefore be different from that of the original config used to generate the checkpoint). The restart will also resume from the last `run` stage (i.e. `train`, `val`, `test`, etc) that was running before the interruption.
 
 ```{warning}
-DO NOT MODIFY THE CONFIG BETWEEN RESTARTS. There are no safety checks to guard against nonsensical changes to the config used for restarts, which can cause various problems during state restoration. It is safest to restart without changes to the original config. If one seeks to train a model from a checkpoint file with different training hyperparameters or datasets (e.g. for fine-tuning), one can use the `ModelFromCheckpoint` [model loader](../api/save_model).
+DO NOT MODIFY THE CONFIG BETWEEN RESTARTS. There are no safety checks to guard against nonsensical changes to the config used for restarts, which can cause various problems during state restoration. It is safest to restart without changes to the original config. If one seeks to train a model from a checkpoint file with different training hyperparameters or datasets (e.g. for fine-tuning), one can use the `ModelFromCheckpoint` [model loader](../api/save_model). The only endorsed exception is raising the `max_epochs` argument of the [Lightning Trainer](https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api) to extend the training run if it was interrupted because `max_epochs` was previously too small.
 ```
 
 ```{tip}
@@ -59,10 +59,16 @@ One can use `nequip.train.callbacks.TestTimeXYZFileWriter` ([see API](../api/cal
 
 ## Packaging
 
-The recommended way to archive a trained model is to `package` it.
+The recommended way to archive a trained model is to `package` it with the `build` option of `nequip-package`.
 
 ```bash
-nequip-package --ckpt-path path/to/ckpt_file --output-path path/to/packaged_model.nequip.zip
+nequip-package build --ckpt-path path/to/ckpt_file --output-path path/to/packaged_model.nequip.zip
+```
+
+One can inspect the metadata of the packaged model by using the `info` option.
+
+```bash
+nequip-package info path/to/pkg_file
 ```
 
 ```{warning}
@@ -70,7 +76,7 @@ The output path MUST have the extension `.nequip.zip`.
 ```
 
 ```{tip}
-To see command line options, one can use `nequip-package -h`
+To see command line options, one can use `nequip-package -h`. There are two options `build` and `info`, so one can get more detailed information with `nequip-package build -h` and `nequip-package info -h`.
 ```
 
 While checkpoint files are unlikely to survive breaking changes across code versions, the packaging infrastructure was designed to ensure that packaged models will continue to be usable as code versions change.

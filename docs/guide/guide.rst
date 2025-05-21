@@ -8,7 +8,9 @@ User Guide
     files
     config
     model
-    faq_errors
+    stats_metrics
+    troubleshoot
+    faq
     conventions
     upgrading
     advanced

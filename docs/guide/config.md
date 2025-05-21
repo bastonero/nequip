@@ -1,9 +1,16 @@
 # Config File
 
 The config file has five main sections: `run`, `data`, `trainer`, `training_module`, `global_options`. These top level config entries must always be present.
+
 Before going into what each section entails, users are advised to take note of OmegaConf's [variable interpolation](https://omegaconf.readthedocs.io/en/latest/usage.html#variable-interpolation) utilities, which may be a useful tool for managing runs.
 Interpolation can be particularly useful when multiple locations in the config require the same values to be repeated.
 It can also be used to access information like the run name or output directory of the training using [Hydra's built-in resolvers](https://hydra.cc/docs/1.3/configure_hydra/intro/#resolvers-provided-by-hydra).
+
+NequIP also registers a number of custom resolvers to allow users to do basic integer arithmetic directly in the config file:
+- Integer multiplication: `area: ${int_mul:${width},${height}}`
+- Integer division: `half_width: ${int_div:${width},2}`
+These resolvers will throw errors if the inputs are not integers or if division is not exact.
+
 
 ## `run`
 
@@ -69,9 +76,7 @@ It is here that the following parameters are defined.
   It is under `model` that the deep equivariant potential model is configured, which includes the NequIP message-passing graph neural network model or the strictly local Allegro model. Refer to the [model documentation page](../api/model) to learn how to configure this section.
 
  ### `loss` and `metrics`
-  All loss components and metrics are in the physcial units associated with the dataset. Note that this behavior of the loss is different from `nequip < 0.7.0`, where the loss would have a different scale. In `nequip >= 0.7.0`, the loss components are all in physical units. For example, if the dataset uses force units of eV/Å, a force mean-squared error (MSE) would have units of (eV/Å)².
-  
-  The loss function and metrics are configured using `MetricsManager` objects ([API docs](../api/metrics)). In addition to the metrics configured in the `MetricsManager`, it also computes a `weighted_sum` based on the `coeff` (coefficient) for each metric. For loss functions, this quantity is used as the loss function as a weighted sum of specified loss componenets. For metrics, the weighted sum could be useful for accounting for energy-force(-stress) balancing for monitoring. For example, `val0_epoch/weighted_sum` can be monitored and used to condition the behavior of learning rate scheduling or early stopping.
+  Loss functions and metrics to monitor training progress are configured here in the `training_module`. Refer to the [Loss and Metrics](stats_metrics.md/#loss-and-metrics) docs for more information.
 
  ### `optimizer` and `lr_scheduler`
 

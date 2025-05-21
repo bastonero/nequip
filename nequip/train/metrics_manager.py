@@ -339,7 +339,9 @@ def EnergyForceLoss(
     per_atom_energy: bool = True,
     type_names=None,
 ):
-    """Simplified ``MetricsManager`` wrapper for a **loss** term containing energy and forces MSEs.
+    """Simplified ``MetricsManager`` wrapper for a **loss** term containing energy and forces mean squared errors (MSEs).
+
+    The loss component names are ``per_atom_energy_mse`` OR `total_energy_mse` (depending on whether ``per_atom_energy`` is ``True`` or ``False``), and `forces_mse`, which are the names to refer to when neeeded, e.g. when scheduling loss component coefficients.
 
     Example usage in config:
     ::
@@ -380,6 +382,21 @@ def EnergyForceLoss(
     return MetricsManager(metrics, type_names=type_names)
 
 
+_EF_METRICS_COEFFS_KEYS: Final[List[str]] = [
+    "total_energy_rmse",
+    "per_atom_energy_rmse",
+    "forces_rmse",
+    "total_energy_mae",
+    "per_atom_energy_mae",
+    "forces_mae",
+]
+
+_EFS_METRICS_COEFFS_KEYS: Final[List[str]] = _EF_METRICS_COEFFS_KEYS + [
+    "stress_rmse",
+    "stress_mae",
+]
+
+
 def EnergyForceMetrics(
     coeffs: Dict[str, float] = {
         "total_energy_rmse": 1.0,
@@ -391,7 +408,7 @@ def EnergyForceMetrics(
     },
     type_names=None,
 ):
-    """Simplified ``MetricsManager`` wrapper for a **metric** term containing energy and force MAEs and RMSEs.
+    """Simplified ``MetricsManager`` wrapper for a **metric** term containing energy and force mean absolute errors (MAEs) and root mean squared errors (RMSEs).
 
     Example usage in config:
     ::
@@ -412,6 +429,9 @@ def EnergyForceMetrics(
     Args:
         coeffs (Dict[str, float]): ``dict`` that stores the relative contribution of the different energy and forces metrics to the ``weighted_sum`` version of the metric as in ``nequip.train.MetricsManager`` (default ``{'total_energy_rmse': 1.0, 'per_atom_energy_rmse': None, 'forces_rmse': 1.0, 'total_energy_mae': None, 'per_atom_energy_mae': None, 'forces_mae': None}``)
     """
+    assert all(
+        [k in _EF_METRICS_COEFFS_KEYS for k in coeffs.keys()]
+    ), f"Unrecognized key found in `coeffs`, only the following are recognized: {_EF_METRICS_COEFFS_KEYS}"
     metrics = [
         {
             "name": "total_energy_rmse",
@@ -462,7 +482,9 @@ def EnergyForceStressLoss(
     per_atom_energy: bool = True,
     type_names=None,
 ):
-    """Simplified ``MetricsManager`` wrapper for a **loss** term containing energy, forces and stress MSEs.
+    """Simplified ``MetricsManager`` wrapper for a **loss** term containing energy, forces and stress mean squared errors (MSEs).
+
+    The loss component names are ``per_atom_energy_mse`` OR ``total_energy_mse`` (depending on whether ``per_atom_energy`` is ``True`` or ``False``), ``forces_mse``, and ``stress_mse``, which are the names to refer to when neeeded, e.g. when scheduling loss component coefficients.
 
     Example usage in config:
     ::
@@ -471,7 +493,7 @@ def EnergyForceStressLoss(
           _target_: nequip.train.NequIPLightningModule
 
           loss:
-            _target_: nequip.train.EnergyForceLoss
+            _target_: nequip.train.EnergyForceStressLoss
             per_atom_energy: true
             coeffs:
               total_energy: 1.0
@@ -523,7 +545,7 @@ def EnergyForceStressMetrics(
     },
     type_names=None,
 ):
-    """Simplified ``MetricsManager`` wrapper for a **metric** term containing energy, force and stress MAEs and RMSEs.
+    """Simplified ``MetricsManager`` wrapper for a **metric** term containing energy, force and stress mean absolute errors (MAEs) and root mean squared errors (RMSEs).
 
     Example usage in config:
     ::
@@ -532,7 +554,7 @@ def EnergyForceStressMetrics(
           _target_: nequip.train.NequIPLightningModule
 
           val_metrics:
-            _target_: nequip.train.EnergyForceMetrics
+            _target_: nequip.train.EnergyForceStressMetrics
             coeffs:
               total_energy_rmse: 1.0
               per_atom_energy_rmse: null
@@ -546,6 +568,9 @@ def EnergyForceStressMetrics(
     Args:
         coeffs (Dict[str, float]): ``dict`` that stores the relative contribution of the different energy and forces metrics to the ``weighted_sum`` version of the metric as in ``nequip.train.MetricsManager`` (default ``{'total_energy_rmse': 1.0, 'per_atom_energy_rmse': None, 'forces_rmse': 1.0, 'stress_rmse': 1.0, 'total_energy_mae': None, 'per_atom_energy_mae': None, 'forces_mae': None, 'stress_mae': None}``)
     """
+    assert all(
+        [k in _EFS_METRICS_COEFFS_KEYS for k in coeffs.keys()]
+    ), f"Unrecognized key found in `coeffs`, only the following are recognized: {_EFS_METRICS_COEFFS_KEYS}"
     metrics = [
         {
             "name": "total_energy_rmse",
