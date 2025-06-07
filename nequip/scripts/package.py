@@ -3,7 +3,9 @@ import argparse
 
 import pathlib
 import yaml
-import warnings
+import importlib.metadata
+
+from typing import Optional
 
 # TODO: check if we still need this?
 # This is a weird hack to avoid Intel MKL issues on the cluster when this is called as a subprocess of a process that has itself initialized PyTorch.
@@ -11,25 +13,30 @@ import warnings
 import numpy as np  # noqa: F401
 import torch
 
-from nequip.data.compile_utils import data_dict_from_checkpoint
-from nequip.model.from_save import (
+from nequip.model.saved_models.checkpoint import data_dict_from_checkpoint
+from nequip.model.saved_models.package import (
     _get_shared_importer,
     _get_package_metadata,
-    ModelFromCheckpoint,
+    _suppress_package_importer_warnings,
+)
+from nequip.model.saved_models import ModelFromCheckpoint
+from nequip.model.saved_models.package import (
+    _EXTERNAL_MODULES,
+    _MOCK_MODULES,
+    _INTERNAL_MODULES,
 )
 from nequip.model.utils import (
     _COMPILE_MODE_OPTIONS,
     _EAGER_MODEL_KEY,
 )
+from nequip.nn.model_modifier_utils import is_persistent_model_modifier
 from nequip.model.modify_utils import get_all_modifiers, only_apply_persistent_modifiers
 from nequip.utils.logger import RankedLogger
 from nequip.utils.versions import get_current_code_versions, _TORCH_GE_2_6
 from nequip.utils.global_state import set_global_state
 
-from ..__init__ import _DISCOVERED_NEQUIP_EXTENSION
 from ._workflow_utils import set_workflow_state
 
-import os
 from omegaconf import OmegaConf
 import hydra
 
@@ -41,7 +48,23 @@ logger = RankedLogger(__name__, rank_zero_only=True)
 # `nequip-package` generates the archival format for NequIP framework models. This file contains the information necessary to track the archival format itself.
 # whenever the archival format changes, `_CURRENT_NEQUIP_PACKAGE_VERSION` (counter to track the packaged model format) should be bumped up to the next number. We can then condition `ModelFromPackage` on the packaging format version to decide code paths to load the model appropriately.
 # `nequip-package` format version index to condition other features upon when loading `nequip-package` from a specific version
-_CURRENT_NEQUIP_PACKAGE_VERSION = 1
+#
+# Package version high-level CHANGELOG:
+# (use git blame on this line to identify specific commits and details of changes)
+# 0:
+#   - Initial version
+# 1:
+#   - package_metadata.txt instead of package_metadata.pkl
+# 2:
+#   - added `external_modules`
+_CURRENT_NEQUIP_PACKAGE_VERSION = 2
+
+
+def _get_version_safe(package_name: str) -> Optional[str]:
+    try:
+        return importlib.metadata.version(package_name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
 
 
 def main(args=None):
@@ -52,23 +75,14 @@ def main(args=None):
 
     build_parser = subparsers.add_parser("build", help="build a packaged model file")
     build_parser.add_argument(
-        "--ckpt-path",
+        "ckpt_path",
         help="path to checkpoint file",
         type=str,
-        required=True,
     )
     build_parser.add_argument(
-        "--output-path",
+        "output_path",
         help="output path to save the packaged model. NOTE: a `.nequip.zip` extension is mandatory",
         type=pathlib.Path,
-        default=os.getcwd() + "/packaged_model.nequip.zip",
-    )
-    build_parser.add_argument(
-        "--extra-externs",
-        help="additional external modules to support during packaging",
-        nargs="+",
-        type=str,
-        default=[],
     )
 
     info_parser = subparsers.add_parser(
@@ -85,6 +99,11 @@ def main(args=None):
         help="print all available model modifiers in the package file",
         action="store_true",
     )
+    info_parser.add_argument(
+        "--yaml",
+        help="output in YAML format",
+        action="store_true",
+    )
 
     args = parser.parse_args(args=args)
 
@@ -93,36 +112,54 @@ def main(args=None):
             ".nequip.zip"
         ), "packed model file to inspect must end with the `.nequip.zip` extension"
 
-        with warnings.catch_warnings():
-            # suppress torch.package TypedStorage warning
-            warnings.filterwarnings(
-                "ignore",
-                message="TypedStorage is deprecated.*",
-                category=UserWarning,
-                module="torch.package.package_importer",
-            )
+        with _suppress_package_importer_warnings():
             imp = torch.package.PackageImporter(args.pkg_path)
             pkg_metadata = _get_package_metadata(imp)
-            print("Package Metadata")
-            print("================")
-            print(
-                yaml.dump(
-                    pkg_metadata,
-                    default_flow_style=False,
-                )
-            )
+
+            # Load and process modifiers if requested
+            modifiers_info = None
             if args.get_modifiers:
-                print("Available Modifiers")
-                print("===================")
                 model = imp.load_pickle(
                     package="model",
                     resource=f"{_EAGER_MODEL_KEY}_model.pkl",
                     map_location="cpu",
                 )
-                modifiers = get_all_modifiers(model)
-                for idx, (name, modifier) in enumerate(modifiers.items()):
-                    print(f"{idx + 1}. {name}\n")
-                    print("\t" + modifier.__doc__ + "\n")
+                modifiers_info = [
+                    {
+                        "name": name,
+                        "persistent": is_persistent_model_modifier(modifier),
+                        "doc": (
+                            modifier.__doc__ if modifier.__doc__ is not None else ""
+                        ).strip(),
+                    }
+                    for name, modifier in get_all_modifiers(model).items()
+                ]
+
+            # Print output
+            if args.yaml:
+                output_data = {"package_metadata": pkg_metadata}
+                if modifiers_info is not None:
+                    output_data["modifiers"] = modifiers_info
+                print(yaml.dump(output_data))
+            else:
+                print("Package Metadata")
+                print("================")
+                print(
+                    yaml.dump(
+                        pkg_metadata,
+                        default_flow_style=False,
+                    )
+                )
+                if modifiers_info is not None:
+                    print("Available Modifiers")
+                    print("===================")
+                    for idx, modifier_info in enumerate(modifiers_info):
+                        persistent_flag = "" if modifier_info["persistent"] else "non-"
+                        print(
+                            f"{idx + 1}. {modifier_info['name']}\t({persistent_flag}persistent)\n"
+                        )
+                        if "doc" in modifier_info:
+                            print(f"\t{modifier_info['doc']}\n")
 
         return
 
@@ -132,23 +169,9 @@ def main(args=None):
 
         assert str(args.output_path).endswith(
             ".nequip.zip"
-        ), "`output-path` must end with the `.nequip.zip` extension"
+        ), "output path must end with the `.nequip.zip` extension"
 
         # === handle internal and external modules ===
-        # internal and external modules that we know of
-        _INTERNAL_MODULES = ["e3nn", "nequip"] + [
-            ep.value for ep in _DISCOVERED_NEQUIP_EXTENSION
-        ]
-        # TODO: ideally we don't have any numpy or matplotlib dependencies, but for now it's here because of e3nn TPs
-        _EXTERNAL_MODULES = [
-            "triton",
-            "io",
-            "opt_einsum_fx",
-            "numpy",
-        ] + args.extra_externs
-
-        _MOCK_MODULES = ["matplotlib"]
-
         overlap = set(_INTERNAL_MODULES) & set(_EXTERNAL_MODULES)
         assert (
             not overlap
@@ -156,6 +179,7 @@ def main(args=None):
 
         logger.debug("Internal Modules: " + str(_INTERNAL_MODULES))
         logger.debug("External Modules: " + str(_EXTERNAL_MODULES))
+        logger.debug("Mock Modules: " + str(_MOCK_MODULES))
 
         # === load checkpoint and extract info ===
         checkpoint = torch.load(
@@ -238,14 +262,7 @@ def main(args=None):
             models_to_package.update({compile_mode: model})
 
         # == package ==
-        with warnings.catch_warnings():
-            # suppress torch.package TypedStorage warning
-            warnings.filterwarnings(
-                "ignore",
-                message="TypedStorage is deprecated.*",
-                category=UserWarning,
-                module="torch.package.package_exporter",
-            )
+        with _suppress_package_importer_warnings():
 
             with torch.package.PackageExporter(
                 args.output_path, importer=importers, debug=True
@@ -267,6 +284,9 @@ def main(args=None):
                 # save metadata used for loading packages
                 pkg_metadata = {
                     "versions": code_versions,
+                    "external_modules": {
+                        k: _get_version_safe(k) for k in _EXTERNAL_MODULES
+                    },
                     "package_version_id": _CURRENT_NEQUIP_PACKAGE_VERSION,
                     "available_models": list(models_to_package.keys()),
                     "atom_types": {idx: name for idx, name in enumerate(type_names)},

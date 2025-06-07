@@ -19,7 +19,12 @@ from nequip.data import (
     _EDGE_FIELDS,
 )
 from nequip.data.transforms import ChemicalSpeciesToAtomTypeMapper
-from nequip.nn import GraphModuleMixin, ForceStressOutput, PartialForceOutput
+from nequip.nn import (
+    GraphModuleMixin,
+    ForceStressOutput,
+    PartialForceOutput,
+    PerTypeScaleShift,
+)
 from nequip.utils import dtype_to_name, find_first_of_type
 from nequip.utils.versions import _TORCH_GE_2_6
 from nequip.utils.test import (
@@ -108,7 +113,7 @@ class BaseModelTests:
         assert isinstance(instance, GraphModuleMixin)
 
     def test_jit(self, model, atomic_batch, device):
-        instance, _, out_fields = model
+        instance, _, _ = model
         data = AtomicDataDict.to_(atomic_batch, device)
         model_script = script(instance)
 
@@ -122,7 +127,7 @@ class BaseModelTests:
         out_instance = instance(data.copy())
         out_script = model_script(data.copy())
 
-        for out_field in out_fields:
+        for out_field in out_instance.keys():
             assert torch.allclose(
                 out_instance[out_field],
                 out_script[out_field],
@@ -143,12 +148,36 @@ class BaseModelTests:
             out_script = model_script(data.copy())
             out_load = load_model(load_dat.copy())
 
-            for out_field in out_fields:
+            for out_field in out_instance.keys():
                 assert torch.allclose(
                     out_script[out_field],
                     out_load[out_field],
                     atol=atol,
                 ), f"JIT didn't repro save-and-loaded JIT on field {out_field} with max error {(out_script[out_field] - out_load[out_field]).abs().max().item()}"
+
+    def compare_output_and_gradients(
+        self, modelA, modelB, model_test_data, tol, compare_outputs=True
+    ):
+        A_out = modelA(model_test_data.copy())
+        B_out = modelB(model_test_data.copy())
+
+        if compare_outputs:
+            for key in ["atomic_energy", "total_energy", "forces", "virial"]:
+                assert torch.allclose(A_out[key], B_out[key], atol=tol)
+
+        # test backwards pass if there are trainable weights
+        if any([p.requires_grad for p in modelB.parameters()]):
+            B_loss = B_out[AtomicDataDict.TOTAL_ENERGY_KEY].square().sum()
+            B_loss.backward()
+
+            A_loss = A_out[AtomicDataDict.TOTAL_ENERGY_KEY].square().sum()
+            A_loss.backward()
+            compile_params = dict(modelB.named_parameters())
+            for k, v in modelB.named_parameters():
+                err = torch.max(torch.abs(v.grad - compile_params[k].grad))
+                assert torch.allclose(
+                    v.grad, compile_params[k].grad, atol=tol, rtol=tol
+                ), err
 
     @override_irreps_debug(False)
     def test_compile(self, model, model_test_data, device):
@@ -176,26 +205,13 @@ class BaseModelTests:
         config["compile_mode"] = "compile"
         compile_model = self.make_model(config, device=device)
 
-        compile_out = compile_model(model_test_data.copy())  # shallow copy
-        assert compile_model._compiled_model, "compilation unsuccessful"
-        # if compilation was successful, internal checks would have ensured consistency of base and compiled model predictions
-        # here, we check that backward pass of the model works for training
-
-        # test backwards pass if there are trainable weights
-        if any([p.requires_grad for p in compile_model.parameters()]):
-            compile_loss = compile_out[AtomicDataDict.TOTAL_ENERGY_KEY].square().sum()
-            compile_loss.backward()
-
-            # compute base model predictions
-            out = instance(model_test_data.copy())  # shallow copy
-            loss = out[AtomicDataDict.TOTAL_ENERGY_KEY].square().sum()
-            loss.backward()
-            compile_params = dict(compile_model.named_parameters())
-            for k, v in instance.named_parameters():
-                err = torch.max(torch.abs(v.grad - compile_params[k].grad))
-                assert torch.allclose(
-                    v.grad, compile_params[k].grad, atol=tol, rtol=tol
-                ), err
+        self.compare_output_and_gradients(
+            modelA=instance,
+            modelB=compile_model,
+            model_test_data=model_test_data,
+            tol=tol,
+            compare_outputs=False,  # Internal checks guarantee that outputs are the same
+        )
 
     @pytest.mark.skipif(
         not _TORCH_GE_2_6, reason="PT2 compile tests skipped for torch < 2.6"
@@ -242,14 +258,13 @@ class BaseModelTests:
             )
 
     def test_forward(self, model, model_test_data):
-        instance, _, out_fields = model
-        output = instance(model_test_data)
-        for out_field in out_fields:
-            assert out_field in output
+        """Tests that we can run a forward pass without errors."""
+        instance, _, _ = model
+        _ = instance(model_test_data)
 
     def test_wrapped_unwrapped(self, model, device, Cu_bulk):
         atoms, data_orig = Cu_bulk
-        instance, _, out_fields = model
+        instance, _, _ = model
         data = from_ase(atoms)
         data = compute_neighborlist_(data, r_max=3.5)
         data[AtomicDataDict.ATOM_TYPE_KEY] = data_orig[AtomicDataDict.ATOM_TYPE_KEY]
@@ -293,7 +308,7 @@ class BaseModelTests:
             )
             out_unwrapped = instance(from_dict(data2))
             tolerance = FLOAT_TOLERANCE[dtype_to_name(instance.model_dtype)]
-            for out_field in out_fields:
+            for out_field in out_ref.keys():
                 # not important for the purposes of this test
                 if out_field in [
                     AtomicDataDict.POSITIONS_KEY,
@@ -306,7 +321,7 @@ class BaseModelTests:
 
     def test_batch(self, model, model_test_data):
         """Confirm that the results for individual examples are the same regardless of whether they are batched."""
-        instance, _, out_fields = model
+        instance, _, _ = model
 
         tolerance = FLOAT_TOLERANCE[dtype_to_name(instance.model_dtype)]
         allclose = functools.partial(torch.allclose, atol=tolerance)
@@ -315,7 +330,7 @@ class BaseModelTests:
         output1 = instance(data1)
         output2 = instance(data2)
         output = instance(model_test_data)
-        for out_field in out_fields:
+        for out_field in output.keys():
             # to ignore
             if out_field in [
                 AtomicDataDict.EDGE_INDEX_KEY,
@@ -772,11 +787,19 @@ class BaseEnergyModelTests(BaseModelTests):
         # Check each edge type
         for node_idx, node_type in enumerate(type_names):
             for nbor_idx, nbor_type in enumerate(type_names):
-                # Extract the cutoff radius for the edge type
+                # extract the cutoff radius for the edge type
                 if per_edge_type:
-                    r_max = per_edge_type_cutoff[node_type]
-                    if not isinstance(r_max, float):
-                        r_max = r_max[nbor_type]
+                    if node_type in per_edge_type_cutoff:
+                        r_max = per_edge_type_cutoff[node_type]
+                        if not isinstance(r_max, float):
+                            if nbor_type in r_max:
+                                r_max = r_max[nbor_type]
+                            else:
+                                # default missing target types to global r_max
+                                r_max = config["r_max"]
+                    else:
+                        # default missing source types to global r_max
+                        r_max = config["r_max"]
 
                 # Control group: force is non-zero within the cutoff radius
                 partial_forces = pair_force(
@@ -830,29 +853,26 @@ class BaseEnergyModelTests(BaseModelTests):
     def test_isolated_atom_energies(self, model, device):
         """Checks that isolated atom energies provided for the per-atom shifts are restored for isolated atoms."""
         instance, config, _ = model
+        scale_shift_module = find_first_of_type(instance, PerTypeScaleShift)
 
-        # skip if no per-type energy shifts
-        if "per_type_energy_shifts" in config:
-            # get the isolated atom energies
-            isolated_energies = torch.tensor(
-                config["per_type_energy_shifts"], device=device
-            )
-
-            # make a synthetic data consisting of three isolated atom frames
-            data_list = []
-            for type_idx in range(3):
-                data = {
-                    "atom_types": np.array([type_idx]),
-                    "pos": np.array([[0.0, 0.0, 0.0]]),
-                }
-                data_list.append(from_dict(data))
-            data = AtomicDataDict.to_(
-                compute_neighborlist_(
-                    AtomicDataDict.batched_from_list(data_list), r_max=config["r_max"]
-                ),
-                device,
-            )
-            out = instance(data)
-            assert torch.allclose(
-                out[AtomicDataDict.TOTAL_ENERGY_KEY], isolated_energies.reshape(3, 1)
-            )
+        if scale_shift_module is not None:
+            if scale_shift_module.has_shifts:
+                # make a synthetic data consisting of three isolated atom frames
+                data_list = []
+                for type_idx in range(3):
+                    data = {
+                        "atom_types": np.array([type_idx]),
+                        "pos": np.array([[0.0, 0.0, 0.0]]),
+                    }
+                    data_list.append(from_dict(data))
+                data = AtomicDataDict.to_(
+                    compute_neighborlist_(
+                        AtomicDataDict.batched_from_list(data_list),
+                        r_max=config["r_max"],
+                    ),
+                    device,
+                )
+                energies = instance(data)[AtomicDataDict.TOTAL_ENERGY_KEY]
+                assert torch.allclose(
+                    energies, scale_shift_module.shifts.reshape(energies.shape)
+                )

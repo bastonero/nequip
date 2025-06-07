@@ -12,9 +12,9 @@ If you want to make a major change, add a new feature, or have any uncertainty a
 
 ## Code Standards
 
-### Unittests
+### Unit tests
 
-For new features, write a **unittest** that covers it wherever possible. If it is a significant change to the training workflow, updating the integrations tests might be required.
+For new features, write a **unit test** that covers it wherever possible. If it is a significant change to the training workflow, updating the integrations tests might be required.
 
 All additions should support CUDA/GPU. If possible, please test your changes on a GPU -- the CI tests on GitHub actions do not have GPU resources available.
 
@@ -23,6 +23,14 @@ All additions should support CUDA/GPU. If possible, please test your changes on 
 - Add **comments** for code whose purpose is not immediately obvious.
 
 - For new classes or functions that will be exposed to users, comprehensive user-facing docstrings are a must. We follow **Google-style Python docstrings**.
+
+- Please carefully follow correct reStructuredText markup in user-facing docstrings or reStructuredText docs and ensure that they render correctly.  Pay particular attention to whitespace, which can easily end up rendering things in blockquotes by accident in reStructuredText.
+
+- Use correct Sphinx (and InterSphinx) references to other classes, functions, etc. that are mentioned.
+
+- Use `.. code-block: language` directives in reStructuredText or `` ```language `` in Markdown to make sure code blocks are rendered with syntax highlighting.
+
+- See docs/README.md for instructions on building the docs locally.
 
 - For new classes or functions that are not user-facing, docstrings and explanatory comments are strongly encouraged and will likely be asked for during code reviews.
 

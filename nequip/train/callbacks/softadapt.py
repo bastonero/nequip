@@ -8,16 +8,17 @@ from typing import List, Dict
 
 
 class SoftAdapt(Callback):
-    """Adaptively modify loss coefficients over a training run using the `SoftAdapt <https://arxiv.org/abs/2403.18122>`_ scheme.
+    """Adaptively modify loss coefficients over a training run using the `SoftAdapt <https://www.sciencedirect.com/science/article/pii/S0927025624003768>`_ scheme.
 
     .. warning::
-        The SoftAdapt requires that all components of the loss function contribute to the loss function, i.e. that their ``coeff`` in the ``MetricsManager`` is not ``None``.
+        The SoftAdapt requires that all components of the loss function contribute to the loss function, i.e. that their ``coeff`` in the :class:`~nequip.train.MetricsManager` is not ``None``.
 
     .. warning::
         It is dangerous to restart training (with SoftAdapt) and use a differently configured loss function for the restart because SoftAdapt's loaded checkpoint state will become ill-suited for the new loss function.
 
     Example usage in config where the loss coefficients are updated every 5 epochs:
-    ::
+
+    .. code-block:: yaml
 
         callbacks:
           - _target_: nequip.train.callbacks.SoftAdapt
@@ -120,6 +121,7 @@ class SoftAdapt(Callback):
         batch_idx: int,
     ):
         """"""
+        del batch, batch_idx  # unused but required by Callback interface
         if trainer.global_step == 0:
             return
         if self.interval == "batch":

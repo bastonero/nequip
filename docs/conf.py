@@ -18,8 +18,8 @@
 # -- Project information -----------------------------------------------------
 
 project = "NequIP"
-copyright = "2021, MIR"
-author = "MIR"
+copyright = "2025 The NequIP Developers"
+author = "The NequIP Developers"
 
 
 # -- General configuration ---------------------------------------------------
@@ -30,8 +30,10 @@ author = "MIR"
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
-    "sphinx_rtd_theme",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.viewcode",
     "myst_parser",
+    "sphinx_copybutton",
 ]
 myst_enable_extensions = [
     "html_admonition",
@@ -42,6 +44,17 @@ myst_heading_anchors = 3
 autodoc_member_order = "bysource"
 autosummary_generate = True
 source_suffix = [".rst", ".md"]
+
+# Intersphinx configuration
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+    "torch": ("https://pytorch.org/docs/stable/", None),
+    "lightning": ("https://lightning.ai/docs/pytorch/stable/", None),
+    "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "e3nn": ("https://docs.e3nn.org/en/stable/", None),
+    "torchmetrics": ("https://lightning.ai/docs/torchmetrics/stable/", None),
+}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -57,16 +70,15 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "sphinx_rtd_theme"
+html_theme = "furo"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
 html_favicon = "favicon.png"
 html_logo = "logo.png"
 html_theme_options = {
-    "logo_only": True,
+    "sidebar_hide_name": True,
 }
 
 
@@ -77,5 +89,4 @@ def process_docstring(app, what, name, obj, options, lines):
 
 
 def setup(app):
-    app.add_css_file("custom.css")
     app.connect("autodoc-process-docstring", process_docstring)

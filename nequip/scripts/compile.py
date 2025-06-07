@@ -6,10 +6,12 @@ from e3nn.util.jit import script
 from ._workflow_utils import set_workflow_state
 from ._compile_utils import COMPILE_TARGET_DICT
 from nequip.model.utils import _EAGER_MODEL_KEY
-from nequip.model.from_save import ModelFromPackage, ModelFromCheckpoint
-from nequip.model.modify_utils import modify
+from nequip.model.saved_models import ModelFromPackage, ModelFromCheckpoint
+from nequip.model.modify_utils import modify, only_apply_persistent_modifiers
 from nequip.train.lightning import _SOLE_MODEL_KEY
-from nequip.data import AtomicDataDict, compile_utils
+from nequip.data import AtomicDataDict
+from nequip.model.saved_models.checkpoint import data_dict_from_checkpoint
+from nequip.model.saved_models.package import data_dict_from_package
 from nequip.utils.logger import RankedLogger
 from nequip.utils.compile import prepare_model_for_compile
 from nequip.utils.global_state import set_global_state, get_latest_global_state
@@ -54,23 +56,22 @@ def main(args=None):
     )
 
     parser.add_argument(
-        "--mode",
-        help="whether to use `torchscript` or `aotinductor` to compile the model",
-        choices=["torchscript", "aotinductor"],
-        type=str,
-        required=True,
-    )
-
-    parser.add_argument(
-        "--input-path",
+        "input_path",
         help="path to a checkpoint model or packaged model file",
         type=pathlib.Path,
     )
 
     parser.add_argument(
-        "--output-path",
+        "output_path",
         help="path to write compiled model file. NOTE: a `.nequip.pth` extension is required if `--mode torchscript` is used and a `.nequip.pt2` extension is required if `--mode aotinductor` is used",
         type=pathlib.Path,
+    )
+
+    parser.add_argument(
+        "--mode",
+        help="whether to use `torchscript` or `aotinductor` to compile the model",
+        choices=["torchscript", "aotinductor"],
+        type=str,
         required=True,
     )
 
@@ -153,7 +154,7 @@ def main(args=None):
     )
     parser.add_argument(
         "--inductor-configs",
-        help="options for AOT Inductor (default: {})",
+        help="options for AOTInductor (default: {})",
         nargs="+",
         type=str,
         default=[],
@@ -186,8 +187,12 @@ def main(args=None):
     # use package load path if extension matches, otherwise assume checkpoint file
     use_ckpt = not str(args.input_path).endswith(".nequip.zip")
     if use_ckpt:
-        model = ModelFromCheckpoint(args.input_path, compile_mode=_EAGER_MODEL_KEY)
+        # we only apply persistent modifiers when building from checkpoint
+        # i.e. acceleration modifiers won't be applied, and have to be specified during compile time
+        with only_apply_persistent_modifiers(persistent_only=True):
+            model = ModelFromCheckpoint(args.input_path, compile_mode=_EAGER_MODEL_KEY)
     else:
+        # packaged models will never have non-persistent modifiers built in
         model = ModelFromPackage(args.input_path, compile_mode=_EAGER_MODEL_KEY)
 
     # === modify model ===
@@ -199,10 +204,19 @@ def main(args=None):
     # ^ `ModuleDict` of `GraphModel` is loaded, we then select the desired `GraphModel` (`args.model` defaults to work for single model case)
 
     # === combine model and global options metadata ===
+    # note that model.metadata can be dynamic and so can account for things that change as a result of modifiers
+    # reference the implementation of model.metadata to check whether this is true for any particular metadata key
     metadata = model.metadata.copy()
-    metadata.update(get_latest_global_state(only_metadata_related=True))
-    # ensure bool -> int for metadata
-    metadata = {k: int(v) if isinstance(v, bool) else v for k, v in metadata.items()}
+    global_metadata_state = get_latest_global_state(only_metadata_related=True)
+    assert set(metadata.keys()).isdisjoint(global_metadata_state.keys())
+    metadata.update(global_metadata_state)
+    del global_metadata_state
+    assert all(isinstance(k, str) for k in metadata.keys())
+    assert all(isinstance(v, (str, bool)) for v in metadata.values())
+    # ensure bool -> str(int) for metadata
+    metadata = {
+        k: str(int(v)) if isinstance(v, bool) else v for k, v in metadata.items()
+    }
 
     logger.debug(model)
 
@@ -216,7 +230,7 @@ def main(args=None):
         set_workflow_state(None)
         return
 
-    # === AOT Inductor ===
+    # === AOTInductor ===
     if args.mode == "aotinductor":
 
         # === sanity check and guarded imports ===
@@ -233,9 +247,9 @@ def main(args=None):
                 data[k] = v
         else:
             if use_ckpt:
-                data = compile_utils.data_dict_from_checkpoint(args.input_path)
+                data = data_dict_from_checkpoint(args.input_path)
             else:
-                data = compile_utils.data_dict_from_package(args.input_path)
+                data = data_dict_from_package(args.input_path)
         data = AtomicDataDict.to_(data, device)
 
         # === parse batch dims range ===

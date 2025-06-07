@@ -9,6 +9,29 @@ Most recent change on the top.
 ## Unreleased
 
 
+## [0.10.0]
+
+### Changed
+- Restructured user guide docs
+
+### Added
+- OpenEquivariance acceleration for NequIP GNN models
+- `SortedNeighborListTransform` for sorted neighborlists with permutation indices to get a sorted transpose
+- Per-edge-type cutoff-aware neighborlist transform
+
+## [0.9.1]
+
+### Changed
+- Revamped docs
+
+
+## [0.9.0]
+
+### Changed
+- [Breaking] `nequip-compile` CLI: `--input-path` and `--output-path` are now positional arguments instead of flags
+- [Breaking] `nequip-package build` CLI: `--ckpt-path` and `--output-path` are now positional arguments instead of flags
+
+
 ## [0.8.0]
 
 ### Added

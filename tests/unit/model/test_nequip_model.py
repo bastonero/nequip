@@ -1,6 +1,8 @@
+import torch
 import pytest
 from nequip.utils.unittests.model_tests import BaseEnergyModelTests
-
+from nequip.utils.test import override_irreps_debug
+from nequip.utils.versions import _TORCH_GE_2_4
 
 BASIC_INFO = {
     "seed": 123,
@@ -39,7 +41,7 @@ minimal_config1 = dict(
 minimal_config2 = dict(
     num_features=8,
     num_layers=3,
-    per_type_energy_shifts=[3.45, 5.67, 7.89],
+    per_type_energy_shifts={"H": 3.45, "C": 5.67, "O": 7.89},
     **COMMON_CONFIG,
 )
 minimal_config3 = dict(
@@ -81,3 +83,39 @@ class TestNequIPModel(BaseEnergyModelTests):
         config = request.param
         config = config.copy()
         return config
+
+    @pytest.mark.skipif(
+        not _TORCH_GE_2_4, reason="OpenEquivariance requires torch >= 2.4"
+    )
+    @override_irreps_debug(False)
+    def test_oeq(self, model, model_test_data, device):
+        try:
+            import openequivariance  # noqa: F401
+        except ImportError:
+            pytest.skip("OpenEquivariance not installed")
+
+        if device == "cpu":
+            pytest.skip("OEQ tests skipped for CPU")
+
+        instance, config, _ = model
+        # get tolerance based on model_dtype
+        tol = {
+            torch.float32: 5e-5,
+            torch.float64: 1e-12,
+        }[instance.model_dtype]
+
+        # Make OEQ model
+        config = {
+            "_target_": "nequip.model.modify",
+            "modifiers": [{"modifier": "enable_OpenEquivariance"}],
+            "model": config.copy(),
+        }
+        oeq_model = self.make_model(config, device=device)
+
+        self.compare_output_and_gradients(
+            modelA=instance,
+            modelB=oeq_model,
+            model_test_data=model_test_data,
+            tol=tol,
+            compare_outputs=True,
+        )

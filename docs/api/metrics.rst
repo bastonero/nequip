@@ -1,24 +1,34 @@
 Loss Function and Error Metrics
 ###############################
 
-The following ``MetricsManager`` wrappers can be used for common force field training scenarios, where one seeks to include energyies and forces or energy, forces, and stresses in the loss function or as metrics for monitoring.
+For practical usage and configuration guidance, see the :doc:`../guide/configuration/metrics` guide.
+This page provides technical API details.
 
- .. autoclass:: nequip.train.EnergyForceLoss
-    :members:
+Simplified Wrappers
+===================
 
- .. autoclass:: nequip.train.EnergyForceStressLoss
-    :members:
+The following :class:`~nequip.train.MetricsManager` wrappers can be used for common force field training scenarios:
 
- .. autoclass:: nequip.train.EnergyForceMetrics
-    :members:
+.. autoclass:: nequip.train.EnergyForceLoss
+   :members:
 
- .. autoclass:: nequip.train.EnergyForceStressMetrics
-    :members:
+.. autoclass:: nequip.train.EnergyForceStressLoss
+   :members:
 
+.. autoclass:: nequip.train.EnergyForceMetrics
+   :members:
 
-For users who seek to configure their own custom loss function or metrics, the following API is offered.
+.. autoclass:: nequip.train.EnergyForceStressMetrics
+   :members:
 
-As an example, we show how one can configure the full ``nequip.train.MetricsManager`` to have behavior equivalent to using ``nequip.train.EnergyForceLoss`` as follows::
+Advanced Configuration: MetricsManager
+=======================================
+
+For users who need custom configurations beyond the simplified wrappers, the full :class:`~nequip.train.MetricsManager` API is available.
+
+Example: Custom MetricsManager equivalent to EnergyForceLoss:
+
+.. code-block:: yaml
 
     _target_: nequip.train.MetricsManager
     metrics:
@@ -35,7 +45,6 @@ As an example, we show how one can configure the full ``nequip.train.MetricsMana
         metric:
           _target_: nequip.train.MeanSquaredError
 
-
 .. autoclass:: nequip.train.MetricsManager
    :members:
 
@@ -44,17 +53,17 @@ As an example, we show how one can configure the full ``nequip.train.MetricsMana
 Error Metrics
 =============
 
- .. autoclass:: nequip.train.MeanSquaredError
-    :members:
+.. autoclass:: nequip.train.MeanSquaredError
+   :members:
 
- .. autoclass:: nequip.train.RootMeanSquaredError
-    :members:
+.. autoclass:: nequip.train.RootMeanSquaredError
+   :members:
 
- .. autoclass:: nequip.train.MeanAbsoluteError
-    :members:
+.. autoclass:: nequip.train.MeanAbsoluteError
+   :members:
 
- .. autoclass:: nequip.train.HuberLoss
-    :members:
+.. autoclass:: nequip.train.HuberLoss
+   :members:
 
 .. autoclass:: nequip.train.StratifiedHuberForceLoss
     :members:
