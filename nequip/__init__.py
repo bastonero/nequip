@@ -1,24 +1,32 @@
 from ._version import __version__  # noqa: F401
 
 import packaging.version
+import sys
+import warnings
 
 import torch
-import torchmetrics
+
+from .utils.resolvers import _register_default_resolvers
+from .utils.version_utils import get_version_safe
+
+# Python version check
+python_version = packaging.version.parse(
+    f"{sys.version_info.major}.{sys.version_info.minor}"
+)
+if python_version == packaging.version.parse("3.9"):
+    warnings.warn(
+        "NequIP's Python 3.9 support is deprecated and will be removed in a future release. Please migrate to Python 3.10 or newer. Python 3.10 will be the minimum supported version in the next few releases.",
+        FutureWarning,
+        stacklevel=2,
+    )
 
 # torch version checks
-torch_version = packaging.version.parse(torch.__version__.split("+")[0])
+torch_version = packaging.version.parse(get_version_safe(torch.__name__).split("+")[0])
 
 # only allow 2.2.* or higher, required for `lightning` and `torchmetrics` compatibility
 assert torch_version >= packaging.version.parse(
     "2.2"
 ), f"NequIP supports 2.2.* or later, but {torch_version} found"
-
-# torchmetrics >= 1.6.0 for ddp autograd
-# https://github.com/Lightning-AI/torchmetrics/releases/tag/v1.6.0
-torchmetrics_version = packaging.version.parse(torchmetrics.__version__)
-assert torchmetrics_version >= packaging.version.parse(
-    "1.6.0"
-), f"NequIP requires torchmetrics>=1.6.0 for ddp training but {torchmetrics_version} found"
 
 # Load all installed nequip extension packages
 # This allows installed extensions to register themselves in
@@ -40,3 +48,6 @@ except (ImportError, TypeError):
 for ep in _DISCOVERED_NEQUIP_EXTENSION:
     if ep.name == "init_always":
         ep.load()
+
+# register OmegaConf resolvers
+_register_default_resolvers()
