@@ -10,16 +10,15 @@ from e3nn.o3._tensor_product._sub import FullyConnectedTensorProduct
 
 from nequip.data import AtomicDataDict
 
-from ._tp_scatter_base import TensorProductScatter
-from .mlp import ScalarMLPFunction
 from ._graph_mixin import GraphModuleMixin
-
+from .mlp import ScalarMLPFunction
+from ._ghost_exchange_base import NoOpGhostExchangeModule
+from ._tp_scatter_base import TensorProductScatter
 
 from typing import Optional
 
 
 class InteractionBlock(GraphModuleMixin, torch.nn.Module):
-
     use_sc: bool
 
     def __init__(
@@ -30,6 +29,7 @@ class InteractionBlock(GraphModuleMixin, torch.nn.Module):
         radial_mlp_width: int = 8,
         avg_num_neighbors: Optional[float] = None,
         use_sc: bool = True,
+        is_first_layer: bool = False,
     ) -> None:
         """InteractionBlock.
 
@@ -142,13 +142,34 @@ class InteractionBlock(GraphModuleMixin, torch.nn.Module):
                 feature_irreps_out,
             )
 
+        self.ghost_exchange = NoOpGhostExchangeModule(
+            field=AtomicDataDict.NODE_FEATURES_KEY, irreps_in=self.irreps_in
+        )
+
+        self.is_first_layer = is_first_layer
+
+    @torch.jit.unused
+    def _get_mliap_num_local(self, data: AtomicDataDict.Type) -> int:
+        return data[AtomicDataDict.LMP_MLIAP_DATA_KEY].nlocal
+
     def forward(self, data: AtomicDataDict.Type) -> AtomicDataDict.Type:
+        if AtomicDataDict.LMP_MLIAP_DATA_KEY in data:
+            num_local_nodes = self._get_mliap_num_local(data)
+        else:
+            num_local_nodes = AtomicDataDict.num_nodes(data)
+
         x = data[AtomicDataDict.NODE_FEATURES_KEY]
-        edge_src = data[AtomicDataDict.EDGE_INDEX_KEY][1]
-        edge_dst = data[AtomicDataDict.EDGE_INDEX_KEY][0]
+
+        # truncate if not first layer
+        if not self.is_first_layer:
+            x = x[:num_local_nodes]
 
         if self.sc is not None:
-            sc = self.sc(x, data[AtomicDataDict.NODE_ATTRS_KEY])
+            node_attrs = data[AtomicDataDict.NODE_ATTRS_KEY]
+            # truncate if not first layer
+            if not self.is_first_layer:
+                node_attrs = node_attrs[:num_local_nodes]
+            sc = self.sc(x, node_attrs)
 
         x = self.linear_1(x)
 
@@ -158,11 +179,22 @@ class InteractionBlock(GraphModuleMixin, torch.nn.Module):
         if alpha is not None:
             x = alpha * x
 
-        edge_weight = self.edge_mlp(data[AtomicDataDict.EDGE_EMBEDDING_KEY])
+        # === comms for ghost-exchange ===
+        # only done if not first layer
+        # because initial embedding include ghosts since atom types come with ghosts
+        if not self.is_first_layer:
+            data[AtomicDataDict.NODE_FEATURES_KEY] = x
+            data = self.ghost_exchange(data, ghost_included=False)
+            x = data[AtomicDataDict.NODE_FEATURES_KEY]
 
+        # === TP and scatter ===
         x = self.tp_scatter(
-            x, data[AtomicDataDict.EDGE_ATTRS_KEY], edge_weight, edge_dst, edge_src
-        )
+            x=x,
+            edge_attr=data[AtomicDataDict.EDGE_ATTRS_KEY],
+            edge_weight=self.edge_mlp(data[AtomicDataDict.EDGE_EMBEDDING_KEY]),
+            edge_dst=data[AtomicDataDict.EDGE_INDEX_KEY][0],
+            edge_src=data[AtomicDataDict.EDGE_INDEX_KEY][1],
+        )[:num_local_nodes]
 
         x = self.linear_2(x)
 

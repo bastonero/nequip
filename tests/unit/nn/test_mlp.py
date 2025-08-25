@@ -23,7 +23,6 @@ def test_mlp(
     bias,
     model_dtype,
 ):
-
     tol = {
         "float32": 1e-5,
         "float64": 1e-12,
@@ -44,7 +43,6 @@ def test_mlp(
         )
 
         if compare_with_e3nn:
-
             assert not mlp_module.is_nonlinear
             print(mlp_module.mlp)
 
@@ -67,8 +65,5 @@ def test_mlp(
     assert out.shape == (batch, output_dim)
 
     if compare_with_e3nn:
-
         e3nn_out = e3nn_mlp(data)
-        assert torch.allclose(e3nn_out, out, rtol=tol, atol=tol), torch.max(
-            torch.abs(e3nn_out - out)
-        )
+        torch.testing.assert_close(e3nn_out, out, rtol=tol, atol=tol)

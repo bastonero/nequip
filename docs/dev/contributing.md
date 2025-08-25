@@ -30,26 +30,41 @@ All additions should support CUDA/GPU. If possible, please test your changes on 
 
 - Use `.. code-block: language` directives in reStructuredText or `` ```language `` in Markdown to make sure code blocks are rendered with syntax highlighting.
 
-- See docs/README.md for instructions on building the docs locally.
-
 - For new classes or functions that are not user-facing, docstrings and explanatory comments are strongly encouraged and will likely be asked for during code reviews.
 
 - Added options should be documented in the docs and changes in the `CHANGELOG.md` file
 
 ### Style Enforcement
 
-We use the [`black`](https://black.readthedocs.io/en/stable/index.html) code formatter with default settings and the [`flake8`](https://flake8.pycqa.org/en/latest/) linter with settings:
+We use [`ruff`](https://docs.astral.sh/ruff/) for both code formatting and linting. Ruff is configured in `pyproject.toml` with the following settings:
+
+- Line length: 88 characters
+- Selected lint rules: E, F, W, C90 (pycodestyle errors, pyflakes, warnings, and complexity)
+- Ignored rules: E226, E501, E741, E743, C901, E203
+- Quote style: double quotes
+- Indentation: spaces
+
+For YAML files, we use [`yamllint`](https://yamllint.readthedocs.io/) to ensure consistent formatting and catch syntax errors.
+
+Please run the formatter and linter before you commit:
 
 ```bash
---ignore=E226,E501,E741,E743,C901,W503,E203 --max-line-length=127
+ruff check .          # Run linting
+ruff format .         # Run formatting
 ```
 
-Please run the formatter before you commit and certainly before you make a PR. The formatter can be easily set up to run automatically on file save in various editors.
+You can also check formatting without making changes:
+
+```bash
+ruff format --check .
+```
+
+The formatter can be easily set up to run automatically on file save in various editors.
   
 You can also use ``pre-commit install`` to install a [pre-commit](https://pre-commit.com/) hook.
 
 ```{tip}
-You may need to install `black`, `flake8` and `Flake8-pyproject` (to read the `flake8` settings from `pyproject.toml`) to run the linter and formatter locally. If using a development IDE such as `VSCode` or `PyCharm`, you may need to update the default `flake8` config to match these settings (also listed in `pyproject.toml`).
+Install `ruff` and `yamllint` to run the linter and formatter locally. VSCode and PyCharm both have ruff extensions available for automatic formatting and linting.
 ```
 
 ### Git Practices

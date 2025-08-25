@@ -17,6 +17,7 @@ _DEFAULT_LONG_FIELDS: Set[str] = {
     _keys.BATCH_KEY,
     _keys.NUM_NODES_KEY,
     _keys.FRAME_SUBSET_KEY,
+    _keys.NUM_LOCAL_GHOST_NODES_KEY,
 }
 _DEFAULT_GRAPH_FIELDS: Set[str] = {
     _keys.TOTAL_ENERGY_KEY,
@@ -56,6 +57,7 @@ _DEFAULT_EDGE_FIELDS: Set[str] = {
     _keys.EDGE_FEATURES_KEY,
     _keys.EDGE_CUTOFF_KEY,
     _keys.EDGE_ENERGY_KEY,
+    _keys.EDGE_FORCE_KEY,
 }
 _DEFAULT_CARTESIAN_TENSOR_FIELDS: Dict[str, str] = {
     _keys.STRESS_KEY: "ij=ji",
@@ -94,9 +96,9 @@ def register_fields(
     assert not isinstance(node_fields, str), "node_fields" + message
     assert not isinstance(edge_fields, str), "edge_fields" + message
     assert not isinstance(long_fields, str), "long_fields" + message
-    assert not isinstance(
-        cartesian_tensor_fields, str
-    ), "cartesian_tensor_fields must be a Dict[str, str], not a single string"
+    assert not isinstance(cartesian_tensor_fields, str), (
+        "cartesian_tensor_fields must be a Dict[str, str], not a single string"
+    )
 
     graph_fields: set = set(graph_fields)
     node_fields: set = set(node_fields)
@@ -142,7 +144,7 @@ def register_fields(
 
 
 def deregister_fields(*fields: Sequence[str]) -> None:
-    r"""Deregister a field registered with ``register_fields``.
+    r"""Deregister a field registered with :func:`register_fields`.
 
     Silently ignores fields that were never registered to begin with.
 
@@ -154,9 +156,9 @@ def deregister_fields(*fields: Sequence[str]) -> None:
         assert f not in _DEFAULT_EDGE_FIELDS, "Cannot deregister built-in field"
         assert f not in _DEFAULT_GRAPH_FIELDS, "Cannot deregister built-in field"
         assert f not in _DEFAULT_LONG_FIELDS, "Cannot deregister built-in field"
-        assert (
-            f not in _DEFAULT_CARTESIAN_TENSOR_FIELDS
-        ), "Cannot deregister built-in field"
+        assert f not in _DEFAULT_CARTESIAN_TENSOR_FIELDS, (
+            "Cannot deregister built-in field"
+        )
 
         _NODE_FIELDS.discard(f)
         _EDGE_FIELDS.discard(f)

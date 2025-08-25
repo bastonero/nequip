@@ -7,15 +7,15 @@ import hydra
 from omegaconf import OmegaConf, DictConfig, ListConfig
 
 logger = RankedLogger(__name__, rank_zero_only=True)
+os.environ["HYDRA_FULL_ERROR"] = "1"
 
 
 @hydra.main(version_base=None, config_path=os.getcwd(), config_name="data")
 def main(config: DictConfig):
-
     # === determine run types ===
-    assert (
-        "run" in config
-    ), "`run` must provided in the config -- it is a list that could include `train`, `val`, `test`, and/or `predict`."
+    assert "run" in config, (
+        "`run` must provided in the config -- it is a list that could include `train`, `val`, `test`, and/or `predict`."
+    )
     if isinstance(config.run, ListConfig) or isinstance(config.run, list):
         runs = config.run
     else:
@@ -36,7 +36,7 @@ def main(config: DictConfig):
     }
 
     # === global state (important for float64 data) ===
-    set_global_state(**OmegaConf.to_container(config.global_options, resolve=True))
+    set_global_state()
 
     # === instantiate and prepare datamodule ===
     datamodule = hydra.utils.instantiate(config.data, _recursive_=False)
@@ -53,6 +53,7 @@ def main(config: DictConfig):
                     f"Constructing LMDB data file for {config.file_path}_{run}_{data_idx} ..."
                 )
                 dloader_kwargs = getattr(datamodule, run + "_dataloader_config").copy()
+                dloader_kwargs.update({"_target_": "torch.utils.data.DataLoader"})
                 dloader_kwargs.update({"batch_size": 1})
                 dloader = datamodule._get_dloader(
                     getattr(datamodule, run + "_dataset"),

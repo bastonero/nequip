@@ -51,6 +51,8 @@ EDGE_FEATURES_KEY: Final[str] = "edge_features"
 EDGE_CUTOFF_KEY: Final[str] = "edge_cutoff"
 # edge energy as in Allegro
 EDGE_ENERGY_KEY: Final[str] = "edge_energy"
+# edge forces (for LAMMPS MLIAP inference)
+EDGE_FORCE_KEY: Final[str] = "edge_forces"
 
 NODE_FEATURES_KEY: Final[str] = "node_features"
 NODE_ATTRS_KEY: Final[str] = "node_attrs"
@@ -80,6 +82,14 @@ FRAME_SUBSET_KEY: Final[str] = "subset"
 # batch related keys
 BATCH_KEY: Final[str] = "batch"
 NUM_NODES_KEY: Final[str] = "num_atoms"
+
+# LAMMPS MLIAP integration keys
+LMP_MLIAP_DATA_KEY: Final[str] = "lmp_mliap_data"
+# (2,) tensor containing [num_local_atoms, num_ghost_atoms]
+# the sum of the entries is `num_total_atoms`
+# used with LAMMPS ML-IAP for now
+# but possible for reuse with other integrations based on similar local-ghost schemes
+NUM_LOCAL_GHOST_NODES_KEY: Final[str] = "num_local_ghost_atoms"
 
 # make a list of allowed keys
 ALLOWED_KEYS: List[str] = [v for k, v in globals().items() if k.endswith("_KEY")]

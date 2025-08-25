@@ -12,7 +12,8 @@ from nequip.model.utils import (
     _EAGER_MODEL_KEY,
 )
 from nequip.data import AtomicDataDict
-from nequip.utils import get_current_code_versions, torch_default_dtype
+
+
 from nequip.utils.global_dtype import _GLOBAL_DTYPE
 from nequip.utils.logger import RankedLogger
 
@@ -55,6 +56,8 @@ def ModelFromCheckpoint(checkpoint_path: str, compile_mode: str = _EAGER_MODEL_K
 
     # === versions ===
     ckpt_versions = checkpoint["hyper_parameters"]["info_dict"]["versions"]
+    from nequip.utils import get_current_code_versions
+
     session_versions = get_current_code_versions(verbose=False)
 
     for code, session_version in session_versions.items():
@@ -79,6 +82,8 @@ def ModelFromCheckpoint(checkpoint_path: str, compile_mode: str = _EAGER_MODEL_K
 
 
 def data_dict_from_checkpoint(ckpt_path: str) -> AtomicDataDict.Type:
+    from nequip.utils.dtype import torch_default_dtype
+
     with torch_default_dtype(_GLOBAL_DTYPE):
         # === get data from checkpoint ===
         checkpoint = torch.load(
@@ -88,7 +93,9 @@ def data_dict_from_checkpoint(ckpt_path: str) -> AtomicDataDict.Type:
         )
         data_config = checkpoint["hyper_parameters"]["info_dict"]["data"].copy()
         if "train_dataloader" not in data_config:
-            data_config["train_dataloader"] = {"_target_: torch.utils.data.DataLoader"}
+            data_config["train_dataloader"] = {
+                "_target_": "torch.utils.data.DataLoader"
+            }
         data_config["train_dataloader"]["batch_size"] = 1
         datamodule = hydra.utils.instantiate(data_config, _recursive_=False)
         # TODO: better way of doing this?

@@ -16,6 +16,8 @@ class EMALightningModule(NequIPLightningModule):
     """
     An exponential moving average (EMA) of the model weights are maintained. Validation and test metrics will be that of the EMA weight model. If EMA is used, models loaded from checkpoint files (except during restarts) will always be the model with EMA weights. Specifically, the EMA models will be the ones loaded in the :class:`~nequip.ase.NequIPCalculator`, compiled with ``nequip-compile``, or packaged with ``nequip-package``.
 
+    Note: EMA requires ``check_val_every_n_epoch`` to be 1 (the default).
+
     Args:
         ema_decay (float): decay constant for the exponential moving average (EMA) of model weights (default ``0.999``)
     """
@@ -175,9 +177,9 @@ class EMAWeights(torch.nn.Module):
         Args:
             model (:class:`torch.nn.Module`): base model
         """
-        assert (
-            self.is_holding_ema_weights
-        ), "EMA module is not holding EMA weights. If using `nequip-train` from a checkpoint, the checkpoint is likely corrupted. Otherwise, there is something wrong and a GitHub issue should be reported."
+        assert self.is_holding_ema_weights, (
+            "EMA module is not holding EMA weights. If using `nequip-train` from a checkpoint, the checkpoint is likely corrupted. Otherwise, there is something wrong and a GitHub issue should be reported."
+        )
 
         ema_param_detached: List[Optional[torch.Tensor]] = []
         model_param_detached: List[Optional[torch.Tensor]] = []
@@ -223,9 +225,9 @@ class EMAWeights(torch.nn.Module):
         """"""
         self.num_updates = state["num_updates"]
         self.is_holding_ema_weights = state["is_holding_ema_weights"]
-        assert (
-            self.is_holding_ema_weights
-        ), "EMA module loaded in a state where it does not contain EMA weights -- the checkpoint file is likely corrupted."
+        assert self.is_holding_ema_weights, (
+            "EMA module loaded in a state where it does not contain EMA weights -- the checkpoint file is likely corrupted."
+        )
 
         # handle possibility of restarts overwriting `decay`
         state_dict_decay = state["decay"]

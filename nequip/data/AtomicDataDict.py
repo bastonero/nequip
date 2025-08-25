@@ -153,9 +153,9 @@ def frame_from_batched(batched_data: Type, index: int) -> Type:
         return batched_data
     # use zero-indexing as per python norm
     N_frames = num_frames(batched_data)
-    assert (
-        0 <= index < N_frames
-    ), f"Input data consists of {N_frames} frames so index can run from 0 to {N_frames-1} -- but given index of {index}!"
+    assert 0 <= index < N_frames, (
+        f"Input data consists of {N_frames} frames so index can run from 0 to {N_frames - 1} -- but given index of {index}!"
+    )
     batches = batched_data[_keys.BATCH_KEY]
     node_idx_offset = (
         0
@@ -255,7 +255,16 @@ def num_frames(data: Type) -> int:
 
 
 def num_nodes(data: Type) -> int:
-    return data[_keys.POSITIONS_KEY].size(0)
+    # consider two possible options
+    # since there are no positions for edge vectors based integrations such as LAMMPS ML-IAP
+    if _keys.POSITIONS_KEY in data:
+        return data[_keys.POSITIONS_KEY].size(0)
+    elif _keys.ATOM_TYPE_KEY in data:
+        return data[_keys.ATOM_TYPE_KEY].size(0)
+    else:
+        raise RuntimeError(
+            f"No basic input node variable found, expecting either {_keys.POSITIONS_KEY} or {_keys.ATOM_TYPE_KEY}"
+        )
 
 
 def num_edges(data: Type) -> int:

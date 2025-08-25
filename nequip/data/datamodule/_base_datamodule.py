@@ -140,6 +140,9 @@ class NequIPDataModule(lightning.LightningDataModule):
                 dataloader_dict = OmegaConf.to_container(
                     dataloader_dict.copy(), resolve=True
                 )
+            # provide a default just in case
+            if "_target_" not in dataloader_dict:
+                dataloader_dict["_target_"] = "torch.utils.data.DataLoader"
             assert "dataset" not in dataloader_dict
             assert "generator" not in dataloader_dict
             if "collate_fn" not in dataloader_dict:
@@ -153,10 +156,16 @@ class NequIPDataModule(lightning.LightningDataModule):
         # == data statistics manager ==
         self.stats_manager_cfg = stats_manager
 
-    def load_state_dict(self, state_dict: Dict[str, any]) -> None:
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         """"""
         self.train_generator_state = state_dict["train_generator_state"]
         self.generator_state = state_dict["generator_state"]
+
+        for varname in ["train", "val", "test", "predict"]:
+            for i in range(self.num_datasets[varname]):
+                dataloader_sd = state_dict.get(f"_{varname}_dataloader_{i}", {})
+                # Save the state dict to be loaded when the dataloader is created
+                setattr(self, f"_{varname}_dataloader_state_dict_{i}", dataloader_sd)
 
     def state_dict(self) -> Dict[str, Any]:
         """"""
@@ -168,10 +177,27 @@ class NequIPDataModule(lightning.LightningDataModule):
             generator_state = self.generator.get_state()
         else:
             generator_state = self.generator_state
-        return {
+
+        sd = {
             "train_generator_state": train_generator_state,
             "generator_state": generator_state,
         }
+
+        for varname in ["train", "val", "test", "predict"]:
+            dloader = getattr(self, f"_{varname}_dataloader", None)
+            for i in range(self.num_datasets[varname]):
+                key = f"_{varname}_dataloader_{i}"
+                # check if dloader exists and has a state_dict method
+                if (
+                    not dloader
+                    or not dloader[i]
+                    or not callable(getattr(dloader[i], "state_dict", None))
+                ):  # user has not specified restartable dataloader
+                    sd[key] = {}
+                else:
+                    sd[key] = dloader[i].state_dict()
+
+        return sd
 
     def setup(self, stage: str) -> None:
         """"""
@@ -221,43 +247,80 @@ class NequIPDataModule(lightning.LightningDataModule):
             if hasattr(self, "train_generator"):
                 self.train_generator_state = self.train_generator.get_state()
                 del self.train_generator
+            if hasattr(self, "_train_dataloader"):
+                del self._train_dataloader
+            if hasattr(self, "_val_dataloader"):
+                del self._val_dataloader
         elif stage == "validate":
             if hasattr(self, "val_dataset"):
                 del self.val_dataset
+            if hasattr(self, "_val_dataloader"):
+                del self._val_dataloader
         elif stage == "test":
             if hasattr(self, "test_dataset"):
                 del self.test_dataset
+            if hasattr(self, "_test_dataloader"):
+                del self._test_dataloader
         elif stage == "predict":
             if hasattr(self, "predict_dataset"):
                 del self.predict_dataset
+            if hasattr(self, "_predict_dataloader"):
+                del self._predict_dataloader
 
     def train_dataloader(self):
         """"""
         # must only return single train dataloader for now
         # see https://lightning.ai/docs/pytorch/stable/data/iterables.html#multiple-dataloaders
-        return self._get_dloader(
+        self._train_dataloader = self._get_dloader(
             self.train_dataset, self.train_generator, self.train_dataloader_config
-        )[0]
+        )
+        self._maybe_load_dataloader_state_dict(self._train_dataloader, "train")
+        return self._train_dataloader[0]
 
     def val_dataloader(self):
         """"""
-        return self._get_dloader(
+        self._val_dataloader = self._get_dloader(
             self.val_dataset, self.generator, self.val_dataloader_config
         )
+        self._maybe_load_dataloader_state_dict(self._val_dataloader, "val")
+        return self._val_dataloader
 
     def test_dataloader(self):
         """"""
-        return self._get_dloader(
+        self._test_dataloader = self._get_dloader(
             self.test_dataset, self.generator, self.test_dataloader_config
         )
+        self._maybe_load_dataloader_state_dict(self._test_dataloader, "test")
+        return self._test_dataloader
 
     def predict_dataloader(self):
         """"""
-        self._get_dloader(
+        # we don't expect this method to be used but it's here for consistency
+        logger.warning(
+            "predict_dataloader() is not expected to be used in typical workflows"
+        )
+        self._predict_dataloader = self._get_dloader(
             self.predict_dataset, self.generator, self.predict_dataloader_config
         )
+        self._maybe_load_dataloader_state_dict(self._predict_dataloader, "predict")
+
+        return self._predict_dataloader
+
+    def _maybe_load_dataloader_state_dict(self, dloader, varname):
+        for i in range(self.num_datasets[varname]):
+            # load the state dict if it exists
+            if hasattr(dloader[i], "load_state_dict") and hasattr(
+                self, f"_{varname}_dataloader_state_dict_{i}"
+            ):
+                dloader[i].load_state_dict(
+                    getattr(self, f"_{varname}_dataloader_state_dict_{i}")
+                )
 
     def _get_dloader(self, datasets, generator, dataloader_dict):
+        if "_target_" not in dataloader_dict:
+            raise RuntimeError(
+                f"`_target_` is missing from the dataloder dict: {dataloader_dict}"
+            )
         return [
             instantiate(
                 dataloader_dict,

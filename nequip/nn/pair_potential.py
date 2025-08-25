@@ -13,7 +13,6 @@ from nequip.utils.compile import conditional_torchscript_jit
 
 
 class _LJParam(torch.nn.Module):
-
     def __init__(self):
         super().__init__()
 
@@ -206,7 +205,6 @@ class SimpleLennardJones(GraphModuleMixin, torch.nn.Module):
 
 
 class _ZBL(torch.nn.Module):
-
     def __init__(self):
         super().__init__()
 
@@ -229,13 +227,15 @@ class _ZBL(torch.nn.Module):
         d2: float = -0.40290
         d3: float = -0.94229
         d4: float = -3.19980
-        # compute
-        edge_types = torch.index_select(atom_types, 0, edge_index.reshape(-1))
-        Z = torch.index_select(Z, 0, edge_types.view(-1)).view(
+        # (num_atoms,) -> (num_atoms, 1)
+        node_Zs = torch.nn.functional.embedding(atom_types.view(-1), Z.view(-1, 1))
+        # (num_atoms,) -> (2 * num_edges,)
+        edge_Zs = torch.nn.functional.embedding(edge_index.view(-1), node_Zs).view(
             2, -1
-        )  # [center/neigh, n_edge]
-        Zi, Zj = Z[0], Z[1]
-        del edge_types, Z
+        )
+        Zi = torch.select(edge_Zs, 0, 0)
+        Zj = torch.select(edge_Zs, 0, 1)
+        del node_Zs, edge_Zs
         x = ((torch.pow(Zi, pzbl) + torch.pow(Zj, pzbl)) * r) / a0
         psi = (
             c1 * (d1 * x).exp()
@@ -250,6 +250,8 @@ class _ZBL(torch.nn.Module):
 @compile_mode("script")
 class ZBL(GraphModuleMixin, torch.nn.Module):
     """`ZBL <https://docs.lammps.org/pair_zbl.html>`_ pair potential energy term.
+
+    Useful as a prior for core repulsion to mitigate molecular dynamics failure modes associated with atoms getting too close.
 
     Args:
         type_names (List[str]): list of type names known by the model, ``[atom1, atom2, atom3]``
@@ -314,6 +316,12 @@ class ZBL(GraphModuleMixin, torch.nn.Module):
         data = with_edge_vectors_(data, with_lengths=True)
         edge_center = data[AtomicDataDict.EDGE_INDEX_KEY][0]
 
+        # account for possibility of reduced num nodes in atomic energy in a local-ghost atom context
+        if AtomicDataDict.PER_ATOM_ENERGY_KEY in data:
+            num_nodes = data[AtomicDataDict.PER_ATOM_ENERGY_KEY].size(0)
+        else:
+            num_nodes = AtomicDataDict.num_nodes(data)
+
         zbl_edge_eng = self._zbl(
             Z=self.atomic_numbers,
             r=data[AtomicDataDict.EDGE_LENGTH_KEY].view(-1),
@@ -327,7 +335,7 @@ class ZBL(GraphModuleMixin, torch.nn.Module):
             zbl_edge_eng,
             edge_center,
             dim=0,
-            dim_size=AtomicDataDict.num_nodes(data),
+            dim_size=num_nodes,
         )
         if AtomicDataDict.PER_ATOM_ENERGY_KEY in data:
             atomic_eng = atomic_eng + data[AtomicDataDict.PER_ATOM_ENERGY_KEY]

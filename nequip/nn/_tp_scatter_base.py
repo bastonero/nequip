@@ -7,7 +7,6 @@ from .model_modifier_utils import replace_submodules, model_modifier
 
 
 class TensorProductScatter(torch.nn.Module):
-
     def __init__(
         self,
         feature_irreps_in,
@@ -60,6 +59,26 @@ class TensorProductScatter(torch.nn.Module):
                     irreps_mid=old.irreps_mid,
                     instructions=old.instructions,
                     use_opaque=_TRAIN_TIME_COMPILE and not _TORCH_GE_2_8,
+                )
+            return new
+
+        return replace_submodules(model, cls, factory)
+
+    @model_modifier(persistent=False)
+    @classmethod
+    def enable_CuEquivariance(cls, model):
+        """Enable CuEquivariance tensor product kernel for accelerated NequIP training and inference."""
+
+        from ._tp_scatter_cueq import CuEquivarianceTensorProductScatter
+        from nequip.utils.dtype import torch_default_dtype
+
+        def factory(old):
+            with torch_default_dtype(old.model_dtype):
+                new = CuEquivarianceTensorProductScatter(
+                    feature_irreps_in=old.feature_irreps_in,
+                    irreps_edge_attr=old.irreps_edge_attr,
+                    irreps_mid=old.irreps_mid,
+                    instructions=old.instructions,
                 )
             return new
 

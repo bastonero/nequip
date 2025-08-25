@@ -20,8 +20,11 @@ _DEFAULT_EXTERNAL_MODULES: Final[Set[str]] = {
     # included by e3nn TPs
     "opt_einsum_fx",
     "numpy",
-    # for NequIP GNN OpenEquivariance OpenEquivarianceTensorProductScatter
+    # for NequIP GNN OpenEquivarianceTensorProductScatter
     "openequivariance",
+    # for NequIP GNN CuEquivarianceTensorProductScatter
+    "cuequivariance",
+    "cuequivariance_torch",
     # for version parsing in torch_versions.py
     "packaging",
 }
@@ -43,6 +46,7 @@ def register_libraries_as_external_for_packaging(
     from that library from being included in the package file.
 
     Two primary types of libraries should be registered as external:
+
     1. Libraries that provide custom C++ or CUDA ops in PyTorch, for example OpenEquivariance.
     2. Large and **stable** third-party, non-PyTorch libraries like NumPy.
 
@@ -72,9 +76,9 @@ def register_libraries_as_external_for_packaging(
     """
     extern_modules = set(extern_modules) if extern_modules is not None else set()
     mock_modules = set(mock_modules) if mock_modules is not None else set()
-    assert extern_modules.isdisjoint(
-        mock_modules
-    ), "Cannot register the same library as both external and mock modules."
+    assert extern_modules.isdisjoint(mock_modules), (
+        "Cannot register the same library as both external and mock modules."
+    )
 
     # TODO: should there be a way to extern only submodules of a library, which is supported by the underlying PyTorch package system?
     global _EXTERNAL_MODULES

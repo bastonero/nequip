@@ -1,5 +1,6 @@
 # This file is a part of the `nequip` package. Please see LICENSE and README at the root for information on using it.
 import torch
+import os
 
 from nequip.nn.compile import ListInputOutputWrapper, DictInputOutputWrapper
 from nequip.data import AtomicDataDict
@@ -28,6 +29,23 @@ def aot_export_model(
 
     # defensively refresh the cache
     torch._dynamo.reset()
+
+    # === preprocess `inductor_configs` ===
+    inductor_configs = inductor_configs.copy()
+
+    # NOTE: fails for torch 2.7 in general
+    # see https://github.com/pytorch/pytorch/issues/152067
+    # NOTE: fails for torch 2.8 on Allegro models, but not NequIP models
+    # TODO: figure out offending op and open PyTorch issue (low priority)
+    # for now we just comment out the previous implementation
+
+    # unless users explicitly set it, we always default aoti constant folding to True
+    # if torch >= 2.8
+    # if (
+    #    _TORCH_GE_2_8
+    #    and "aot_inductor.use_runtime_constant_folding" not in inductor_configs
+    # ):
+    #    inductor_configs["aot_inductor.use_runtime_constant_folding"] = True
 
     # === preprocess model and make_fx ===
     model_to_trace = ListInputOutputWrapper(model, input_fields, output_fields)
@@ -59,19 +77,20 @@ def aot_export_model(
     assert out_path == output_path
 
     # === sanity check ===
-    aot_model = DictInputOutputWrapper(
-        torch._inductor.aoti_load_package(out_path),
-        input_fields,
-        output_fields,
-    )
-    test_model_output_similarity_by_dtype(
-        aot_model,
-        model,
-        {k: data[k] for k in input_fields},
-        model.model_dtype,
-        fields=output_fields,
-        error_message=_pt2_compile_error_message,
-    )
-    del aot_model
+    if os.environ.get("NEQUIP_SKIP_AOTI_MODEL_CHECK", "0") != "1":
+        aot_model = DictInputOutputWrapper(
+            torch._inductor.aoti_load_package(out_path),
+            input_fields,
+            output_fields,
+        )
+        test_model_output_similarity_by_dtype(
+            aot_model,
+            model,
+            {k: data[k] for k in input_fields},
+            model.model_dtype,
+            fields=output_fields,
+            error_message=_pt2_compile_error_message,
+        )
+        del aot_model
 
     return out_path

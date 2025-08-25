@@ -12,7 +12,6 @@ from .model_modifier_utils import model_modifier, replace_submodules
 from nequip.utils.global_dtype import _GLOBAL_DTYPE
 
 from typing import Optional, List, Dict, Union
-import warnings
 
 
 class AtomwiseOperation(GraphModuleMixin, torch.nn.Module):
@@ -163,12 +162,10 @@ class PerTypeScaleShift(GraphModuleMixin, torch.nn.Module):
 
         # === preprocess scales and shifts ===
         # we only accept single values or dicts
-        # but we previously accepted lists, so we maintain backwards compatibility for a while
-        # TODO: strictly enforce only floats and dicts when the time comes
-        # for now, we throw a warning to get people to migrate
+        # lists are no longer supported
         if isinstance(scales, list) or isinstance(shifts, list):
-            warnings.warn(
-                "\n\n!!IMPORTANT WARNING!! \nWe will stop supporting the use of lists for per-type energy scales and shifts in the next few releases. Please begin migrating to the use of dicts that map from the model's `type_names` as keys to the relevant scale or shift values. For example, the following\n\n  per_type_energy_shifts: [1, 2, 3]\n\nshould be changed to\n\n  per_type_energy_shifts:\n    C: 1\n    H: 2\n    O: 3\n\n"
+            raise ValueError(
+                "\n\nLists are no longer supported for per-type energy scales and shifts. Please use dicts that map from the model's `type_names` as keys to the relevant scale or shift values. For example, the following\n\n  per_type_energy_shifts: [1, 2, 3]\n\nshould be changed to\n\n  per_type_energy_shifts:\n    C: 1\n    H: 2\n    O: 3\n\n"
             )
 
         # single valued case
@@ -201,7 +198,9 @@ class PerTypeScaleShift(GraphModuleMixin, torch.nn.Module):
                     torch.ones(self.num_types, dtype=scales.dtype, device=scales.device)
                     * scales
                 )
-            assert scales.shape == (self.num_types,) or scales.numel() == 1
+            assert scales.shape == (self.num_types,) or scales.numel() == 1, (
+                f"Scales expected to have shape ({self.num_types},), but found {scales.shape}"
+            )
             scales = scales.reshape(-1, 1)
             if self.scales_trainable:
                 self.scales = torch.nn.Parameter(scales)
@@ -222,7 +221,9 @@ class PerTypeScaleShift(GraphModuleMixin, torch.nn.Module):
                     torch.ones(self.num_types, dtype=shifts.dtype, device=shifts.device)
                     * shifts
                 )
-            assert shifts.shape == (self.num_types,) or shifts.numel() == 1
+            assert shifts.shape == (self.num_types,) or shifts.numel() == 1, (
+                f"Shifts expected to have shape ({self.num_types},), but found {shifts.shape}"
+            )
             shifts = shifts.reshape(-1, 1)
             if self.shifts_trainable:
                 self.shifts = torch.nn.Parameter(shifts)
@@ -242,6 +243,8 @@ class PerTypeScaleShift(GraphModuleMixin, torch.nn.Module):
         # === set up ===
         in_field = data[self.field]
         types = data[AtomicDataDict.ATOM_TYPE_KEY].view(-1)
+        # to account for local-ghost truncation in ML-IAP
+        types = types[: in_field.size(0)]
 
         if self.has_scales:
             if self.scales_shortcut:
@@ -314,7 +317,7 @@ class PerTypeScaleShift(GraphModuleMixin, torch.nn.Module):
 
         def _helper(sc_var, vname, old):
             # get original dict values
-            orig_sc_var = getattr(old, vname).detach().cpu().tolist()
+            orig_sc_var = getattr(old, vname).detach().cpu().reshape(-1).tolist()
             # handle special case of single-valued shortcut
             if len(orig_sc_var) != len(old.type_names):
                 assert len(orig_sc_var) == 1
@@ -325,9 +328,9 @@ class PerTypeScaleShift(GraphModuleMixin, torch.nn.Module):
                 if isinstance(sc_var, float) or isinstance(sc_var, int):
                     sc_var = {name: sc_var for name in old.type_names}
                 assert isinstance(sc_var, dict)
-                assert all(
-                    k in old.type_names for k in sc_var.keys()
-                ), f"Provided `{vname}` dict keys ({sc_var.keys()}) do not match the expected type names of the model ({old.type_names})."
+                assert all(k in old.type_names for k in sc_var.keys()), (
+                    f"Provided `{vname}` dict keys ({sc_var.keys()}) do not match the expected type names of the model ({old.type_names})."
+                )
                 # update original model's dict with new dict entries
                 new_sc_var.update(sc_var)
             # if no new values provided, we default to the original model's dict entries
@@ -354,7 +357,6 @@ class PerTypeScaleShift(GraphModuleMixin, torch.nn.Module):
 def _format_type_vals(
     vals: List[float], type_names: List[str], element_formatter: str = ".6f"
 ) -> str:
-
     if vals is None or not vals:
         return f"[{', '.join(type_names)}: None]"
 
