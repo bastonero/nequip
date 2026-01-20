@@ -18,20 +18,12 @@ These files can be loaded using the following :class:`~nequip.model.ModelFromChe
   - Use absolute paths instead of relative paths.
   - Do not change the directory structure or move your files when using the model loaders.
   - Ideally, store the original checkpoint/package files somewhere that makes their association with the new training run clear to you.
-    
-  Be aware that iterated nested use of :class:`~nequip.model.ModelFromCheckpoint` will result in a checkpoint chaining phenomenon where loading the checkpoint at the end of the chain requires successfully loading every intermediate checkpoint file in the chain. One can break this chain if necessary by using ``nequip-package`` to convert the checkpoint file into a packaged model, and then using :class:`~nequip.model.ModelFromPackage`. 
+
+  Be aware that iterated nested use of :class:`~nequip.model.ModelFromCheckpoint` will result in a checkpoint chaining phenomenon where loading the checkpoint at the end of the chain requires successfully loading every intermediate checkpoint file in the chain. One can break this chain if necessary by using ``nequip-package`` to convert the checkpoint file into a packaged model, and then using :class:`~nequip.model.ModelFromPackage`.
 
 .. autofunction:: nequip.model.ModelFromCheckpoint
 
 .. autofunction:: nequip.model.ModelFromPackage
-
-Loading Compiled Models
-#######################
-
-:doc:`Compiled models <../guide/getting-started/workflow>` created with ``nequip-compile`` can be loaded for inference using the following loader.
-This is typically used by the ASE calculator or other inference applications.
-
-.. autofunction:: nequip.model.inference_models.load_compiled_model
 
 Modifying Saved Models
 ######################

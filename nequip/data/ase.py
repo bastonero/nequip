@@ -5,6 +5,7 @@ import numpy as np
 import torch
 
 import ase
+import ase.geometry
 from ase.calculators.singlepoint import SinglePointCalculator, SinglePointDFTCalculator
 from ase.calculators.calculator import all_properties as ase_all_properties
 from ase.stress import full_3x3_to_voigt_6_stress, voigt_6_to_full_3x3_stress
@@ -34,7 +35,6 @@ def from_ase(
         include_keys (Optional[List]): list of additional keys to include in AtomicData aside from the ones defined in ``ase.calculators.calculator.all_properties``
         exclude_keys (Optional[List]): list of keys that may be present in the ``ase.Atoms`` object but the user wishes to exclude
     """
-    from nequip.ase import NequIPCalculator
 
     default_args = set(
         [
@@ -82,12 +82,9 @@ def from_ase(
                     if k in include_keys
                 }
             )
-        elif isinstance(atoms.calc, NequIPCalculator):
-            pass  # otherwise the calculator breaks
-        else:
-            raise NotImplementedError(
-                f"`from_ase` does not support calculator {atoms.calc}"
-            )
+        # we just ignore the calculator otherwise
+        # this may not work if we need to load more complex information from some unknown calculator
+        # but we can fix it if/when that happens, which is hopefully never
 
     # handle ase-specific formats for single frame (no batching yet)
     for key, value in add_fields.items():
@@ -140,6 +137,14 @@ def from_ase(
                     ), (
                         f"graph cartesian tensor {key} should be (1, 3, 3) after adding batch dim, got {add_fields[key].shape}"
                     )
+
+    # NOTE: if cell is not present, ASE defaults to (3, 3) matrix of zeros
+    # i.e.
+    # if cell is None:
+    #     cell = np.zeros((3, 3))
+    # self.set_cell(cell)
+
+    # c.f. https://gitlab.com/ase/ase/-/blob/master/ase/atoms.py?ref_type=heads#L114
 
     data = {
         AtomicDataDict.POSITIONS_KEY: atoms.positions,

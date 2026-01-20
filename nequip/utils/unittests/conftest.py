@@ -57,26 +57,18 @@ def model_dtype(request):
 def default_dtype():
     old_dtype = torch.get_default_dtype()
     # global dtype is always set to float64
-    set_global_state()
+    # Ampere and TF32: Many of the tests for NequIP involve numerically checking
+    # algebraic properties— normalization, equivariance, continuity, etc.
+    # With the added numerical noise of TF32, some of those tests fail
+    # with the current (and usually generous) thresholds.
+    # Thus we go on the assumption that PyTorch + NVIDIA got everything
+    # right, that this setting DOES NOT AFFECT the model outputs except
+    # for increased numerical noise, and only test without it.
+    # TODO: consider running tests with and without
+    # TODO: check how much thresholds have to be changed to accommodate TF32
+    set_global_state(allow_tf32=False)
     yield torch.get_default_dtype()
     torch.set_default_dtype(old_dtype)
-
-
-# - Ampere and TF32 -
-# Many of the tests for NequIP involve numerically checking
-# algebraic properties— normalization, equivariance,
-# continuity, etc.
-# With the added numerical noise of TF32, some of those tests fail
-# with the current (and usually generous) thresholds.
-#
-# Thus we go on the assumption that PyTorch + NVIDIA got everything
-# right, that this setting DOES NOT AFFECT the model outputs except
-# for increased numerical noise, and only test without it.
-#
-# TODO: consider running tests with and without
-# TODO: check how much thresholds have to be changed to accomidate TF32
-torch.backends.cuda.matmul.allow_tf32 = False
-torch.backends.cudnn.allow_tf32 = False
 
 
 @pytest.fixture(scope="session")
@@ -94,7 +86,8 @@ def temp_data(default_dtype):
 def CH3CHO(CH3CHO_no_typemap) -> Tuple[Atoms, AtomicDataDict.Type]:
     atoms, data = CH3CHO_no_typemap
     tm = ChemicalSpeciesToAtomTypeMapper(
-        chemical_symbols=["C", "O", "H"],
+        model_type_names=["C", "O", "H"],
+        chemical_species_to_atom_type_map={"C": "C", "O": "O", "H": "H"},
     )
     data = tm(data)
     return atoms, data
@@ -115,7 +108,8 @@ def Cu_bulk(default_dtype) -> Tuple[Atoms, AtomicDataDict.Type]:
     atoms.rattle()
     data = from_ase(atoms)
     tm = ChemicalSpeciesToAtomTypeMapper(
-        chemical_symbols=["Cu"],
+        model_type_names=["Cu"],
+        chemical_species_to_atom_type_map={"Cu": "Cu"},
     )
     nl = NeighborListTransform(r_max=3.5)
     data = nl(tm(data))
@@ -147,7 +141,8 @@ def nequip_dataset(molecules):
         yield ASEDataset(
             transforms=[
                 ChemicalSpeciesToAtomTypeMapper(
-                    chemical_symbols=["H", "C", "O"],
+                    model_type_names=["H", "C", "O"],
+                    chemical_species_to_atom_type_map={"H": "H", "C": "C", "O": "O"},
                 ),
                 NeighborListTransform(r_max=3.0),
             ],
@@ -177,7 +172,8 @@ def diamond_carbon(default_dtype) -> AtomicDataDict.Type:
         )
         data = from_ase(atoms)
         tm = ChemicalSpeciesToAtomTypeMapper(
-            chemical_symbols=["H", "C", "O"],
+            model_type_names=["H", "C", "O"],
+            chemical_species_to_atom_type_map={"H": "H", "C": "C", "O": "O"},
         )
         nl = NeighborListTransform(r_max=3.5)
         data = nl(tm(data))

@@ -73,9 +73,14 @@ nequip-train -cn config.yaml
           ^~~~~~~~~~~~
   compilation terminated.
   ```
-  
-  **Solution**: Use newer GCC Version
-  It's likely your GCC version does not support C++17. Try a GCC version >= 11 that supports C++17 by default (see [GCC C++17 status](https://gcc.gnu.org/projects/cxx-status.html#cxx17)) 
+  or like this:
+  ```bash
+  Segmentation fault (core dumped)
+  ```
+
+  **Solution**: Use a newer GCC version.
+
+  It's likely your GCC version does not support C++17. Try a GCC version >= 11 that supports C++17 by default (see [GCC C++17 status](https://gcc.gnu.org/projects/cxx-status.html#cxx17)).
 
   On HPC clusters, you can usually `module load` to a newer version of GCC.
 
@@ -87,3 +92,13 @@ nequip-train -cn config.yaml
   ```
 
   **Solution**: This error can occur when using `check_val_every_n_epoch` with a value other than 1. EMA requires validation to run every epoch. No configuration change is needed if the field is unspecified in the config.
+
+### Training Freezes or Hangs
+
+  **Problem**: Trying to run `nequip-train` as follows proceeds normally but then freezes at this point:
+```bash
+    Building model and training_module from scratch / checkpoint ...
+```
+  This seems to occur due to corruption of `torch` extension optimisation caches (such as for `OpenEquivariance`).
+
+  **Solution**: Remove the torch extensions cache folder, to force it to re-build: `rm -rf ~/.cache/torch_extensions/*`.

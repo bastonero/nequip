@@ -15,7 +15,6 @@ from nequip.data import (
     to_ase,
     compute_neighborlist_,
 )
-from nequip.data._nl import neighbor_list_and_relative_vec
 from nequip.utils.test import compare_neighborlists
 
 # check for optional neighborlist libraries
@@ -42,8 +41,9 @@ def test_to_ase_batches(atomic_batch):
     for batch_idx, atoms in enumerate(to_ase_atoms_batch):
         mask = atomic_batch[AtomicDataDict.BATCH_KEY] == batch_idx
         assert atoms.get_positions().shape == (len(atoms), 3)
-        assert np.allclose(
-            atoms.get_positions(), atomic_batch[AtomicDataDict.POSITIONS_KEY][mask]
+        torch.testing.assert_close(
+            torch.from_numpy(atoms.get_positions()),
+            atomic_batch[AtomicDataDict.POSITIONS_KEY][mask],
         )
         assert atoms.get_atomic_numbers().shape == (len(atoms),)
         assert np.array_equal(
@@ -71,7 +71,7 @@ def test_process_dict_invariance(H2, CuFcc, CH3CHO):
         data1 = from_dict(data.copy())
         data2 = from_dict(data1.copy())
     for k in data.keys():
-        assert torch.allclose(data1[k], data2[k])
+        torch.testing.assert_close(data1[k], data2[k])
 
 
 def test_without_nodes(CH3CHO):
@@ -109,12 +109,11 @@ def test_without_nodes(CH3CHO):
 
 def test_silicon_neighbors(Si):
     r_max, points, data = Si
-    edge_index, cell_shifts, cell = neighbor_list_and_relative_vec(
-        points[AtomicDataDict.POSITIONS_KEY],
-        pbc=True,
-        cell=points[AtomicDataDict.CELL_KEY],
+    test_data = compute_neighborlist_(
+        from_dict(points),
         r_max=r_max,
     )
+    edge_index = test_data[AtomicDataDict.EDGE_INDEX_KEY]
     edge_index_true = torch.LongTensor(
         [[0, 0, 0, 0, 1, 1, 1, 1], [1, 1, 1, 1, 0, 0, 0, 0]]
     )

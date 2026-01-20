@@ -1,8 +1,12 @@
 # This file is a part of the `nequip` package. Please see LICENSE and README at the root for information on using it.
 
 import torch
+import tempfile
+import os
+from pathlib import Path
 
 from nequip.data import AtomicDataDict
+from nequip.data.transforms.neighborlist import NeighborListTransform
 from nequip.nn import graph_model
 from nequip.model.saved_models.load_utils import load_saved_model
 from nequip.model.modify_utils import get_all_modifiers, modify
@@ -25,7 +29,8 @@ from typing import List
 class NequIPLAMMPSMLIAPWrapper(MLIAPUnified):
     """LAMMPS-MLIAP interface for NequIP framework models."""
 
-    model_path: str
+    model_bytes: bytes
+    model_filename: str
 
     def __init__(
         self,
@@ -41,13 +46,21 @@ class NequIPLAMMPSMLIAPWrapper(MLIAPUnified):
             "PyTorch >= 2.6 required for NequIP's LAMMPS ML-IAP interface"
         )
         super().__init__()
-        self.model_path = model_path
+
+        # read model file and store as bytes
+        with open(model_path, "rb") as f:
+            self.model_bytes = f.read()
+
+        # store the original filename to preserve extension (just the filename, not full path)
+        self.model_filename = Path(model_path).name
+
         self.model_key = model_key
         self.modifiers = modifiers
         self.compile = compile
         self.tf32 = tf32
         self.model = None
         self.device = None
+        self.nl = None
 
         # to placate the interface
         self.nparams = 1
@@ -55,11 +68,7 @@ class NequIPLAMMPSMLIAPWrapper(MLIAPUnified):
 
         # === set model-depnedent params ===
         set_global_state()
-        model = load_saved_model(
-            self.model_path,
-            compile_mode=_EAGER_MODEL_KEY,
-            model_key=self.model_key,
-        )
+        model = self._load_model_from_bytes()
         self.rcutfac = 0.5 * float(model.metadata[graph_model.R_MAX_KEY])
         # TODO: we are assuming model type names are element names here
         # but this might not be true
@@ -74,15 +83,26 @@ class NequIPLAMMPSMLIAPWrapper(MLIAPUnified):
                     f"Provided modifier `{modifier}` is not available in the model; only the following are available for the provided model: {available_modifiers}"
                 )
 
+    def _load_model_from_bytes(self):
+        # load model from bytes by creating a temporary file.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # preserve the original filename and extension
+            model_path = os.path.join(tmpdir, self.model_filename)
+            with open(model_path, "wb") as f:
+                f.write(self.model_bytes)
+
+            model = load_saved_model(
+                model_path,
+                compile_mode=_EAGER_MODEL_KEY,
+                model_key=self.model_key,
+            )
+        return model
+
     def _initialize_model(self, lmp_data) -> None:
         # initialize global state
         set_global_state(allow_tf32=self.tf32)
         # load eager model
-        model = load_saved_model(
-            self.model_path,
-            compile_mode=_EAGER_MODEL_KEY,
-            model_key=self.model_key,
-        )
+        model = self._load_model_from_bytes()
 
         # apply LAMMPS MLIAP ghost exchange modifier if present
         available_modifiers = get_all_modifiers(model)
@@ -111,11 +131,17 @@ class NequIPLAMMPSMLIAPWrapper(MLIAPUnified):
         )
         model = prepare_model_for_compile(model, self.device)
 
-        # make the model an energy model so that we can rely on AOT Autograd for inference
-        # model is `GraphModel(StressForceOutput(EnergyModel))`
-        # we have to do it this way since `torch.compile` can't handle `x.requires_grad_(True)`
+        # make sure that derivative computation for forces, stresses is disabled
+        # such that the model is an energy model so that we can rely on AOT Autograd for inference
+        # since `torch.compile` can't handle `x.requires_grad_(True)`
         # we avoid using the `CompileGraphModel` because of potential batch dim issues, potential make_fx issues with the ghost exchange module, and because it was written specifically for train-time compile
-        model.model = model.model.func
+        if "disable_ForceStressOutput" in available_modifiers:
+            model = modify(model, [{"modifier": "disable_ForceStressOutput"}])
+        else:
+            # very bad hack, but left for backwards compatibility
+            # TODO: remove in the future as a breaking change
+            # assumes model is `GraphModel(StressForceOutput(EnergyModel))`
+            model.model = model.model.func
 
         if self.compile:
             # NOTE: it seems that we have to set `freezing` this way for constant folding
@@ -126,6 +152,17 @@ class NequIPLAMMPSMLIAPWrapper(MLIAPUnified):
             )
         else:
             self.model = model
+
+        # instantiate NeighborListTransform for per-edge-type cutoff pruning
+        per_edge_type_cutoff = model.metadata.get("per_edge_type_cutoff", None)
+        if per_edge_type_cutoff is not None:
+            self.nl = NeighborListTransform(
+                r_max=float(model.metadata[graph_model.R_MAX_KEY]),
+                per_edge_type_cutoff=per_edge_type_cutoff,
+                type_names=model.type_names,
+            )
+            self.nl._normalizer.to(self.device)
+            # ^ important to set to correct device (typically not needed for training context since data transforms are on CPU)
 
     def compute_forces(self, lmp_data):
         # === lazily load model ===
@@ -152,14 +189,10 @@ class NequIPLAMMPSMLIAPWrapper(MLIAPUnified):
         # - edge -> node scatter operations / nodewise operations (e.g. in `nequip/nn/interaction_block.py`)
         # - nodewise operations that involve `atom_types` (since `atom_types` is `num_local + num_ghost`), e.g. in `PerTypeScaleShift` and `ZBL`.
 
-        # TODO: we have yet to exploit per-edge-type cutoffs by pruning the edge vectors and neighborlist
-        # make sure edge vectors `requires_grad`
-        edge_vectors = torch.as_tensor(lmp_data.rij, dtype=torch.float64).to(
-            self.device
-        )
-        edge_vectors.requires_grad_(True)
         nequip_data_in = {
-            AtomicDataDict.EDGE_VECTORS_KEY: edge_vectors,
+            AtomicDataDict.EDGE_VECTORS_KEY: torch.as_tensor(
+                lmp_data.rij, dtype=torch.float64
+            ).to(self.device),
             AtomicDataDict.EDGE_INDEX_KEY: torch.vstack(
                 [
                     torch.as_tensor(lmp_data.pair_i, dtype=torch.int64).to(self.device),
@@ -175,9 +208,15 @@ class NequIPLAMMPSMLIAPWrapper(MLIAPUnified):
             ).to(self.device),
         }
 
+        # === apply per-edge-type cutoff pruning if available ===
+        if self.nl is not None:
+            nequip_data_in = self.nl._apply_per_edge_type_cutoffs(nequip_data_in)
+
         # === run model ===
+        # make sure edge vectors `requires_grad`
+        edge_vectors = nequip_data_in[AtomicDataDict.EDGE_VECTORS_KEY]
+        edge_vectors.requires_grad_(True)
         # run model and backwards for edge forces
-        nequip_data_in[AtomicDataDict.EDGE_VECTORS_KEY].requires_grad_(True)
         nequip_data_out = self.model(nequip_data_in)
         # correct sign convention for consistency with LAMMPS
         edge_forces = torch.autograd.grad(

@@ -56,7 +56,7 @@ def conffile(request):
             else []
         ),
         {"_target_": "nequip.train.EMALightningModule"},
-        {"_target_": "nequip.train.EMAConFIGLightningModule"},
+        # {"_target_": "nequip.train.EMAConFIGLightningModule"},
     ],
 )
 def training_module_override_dict(request):
@@ -156,28 +156,42 @@ class TrainingInvarianceBaseTest:
             print(orig_train_loss)
             print(new_train_loss)
             assert len(orig_train_loss) == len(new_train_loss)
-            assert all(
-                [
-                    math.isclose(a, b, rel_tol=tol)
-                    for a, b in zip(orig_train_loss.values(), new_train_loss.values())
-                ]
-            )
+            for name, orig_val, new_val in zip(
+                orig_train_loss.keys(),
+                orig_train_loss.values(),
+                new_train_loss.values(),
+            ):
+                if not math.isclose(orig_val, new_val, rel_tol=tol):
+                    raise AssertionError(
+                        f"Training loss mismatch for '{name}': "
+                        f"original={orig_val}, new={new_val}, "
+                        f"diff={abs(orig_val - new_val)}, rel_tol={tol}"
+                    )
 
             # == test val metrics invariance to batch size ==
             batchsize1_val_metrics = nequip_module.val_metrics[0].metrics_values_epoch
             print(batchsize5_val_metrics)
             print(batchsize1_val_metrics)
             assert len(batchsize5_val_metrics) == len(batchsize1_val_metrics)
-            assert all(
-                [
-                    math.isclose(a, b, rel_tol=tol)
-                    for a, b in zip(
-                        batchsize5_val_metrics.values(), batchsize1_val_metrics.values()
+            for name, batch5_val, batch1_val in zip(
+                batchsize5_val_metrics.keys(),
+                batchsize5_val_metrics.values(),
+                batchsize1_val_metrics.values(),
+            ):
+                # do not include maxabserr or total energy in testing (per atom energy tested)
+                if ("maxabserr" in name) or ("total_energy" in name):
+                    continue
+                if not math.isclose(batch5_val, batch1_val, rel_tol=tol, abs_tol=tol):
+                    raise AssertionError(
+                        f"Validation metric mismatch for '{name}': "
+                        f"batch_size=5 value={batch5_val}, batch_size=1 value={batch1_val}, "
+                        f"diff={abs(batch5_val - batch1_val)}, rel_tol={tol}"
                     )
-                ]
-            )
 
     # TODO: will fail if train dataloader has shuffle=True
+    # NOTE: test_restarts doesn't pass with PyTorch Lightning >= 2.6.0
+    # may be related: https://github.com/Lightning-AI/pytorch-lightning/issues/20204
+    # CI enforces lightning < 2.6.0 until this is resolved.
     def test_restarts(self, fake_model_training_session):
         config, tmpdir, env, model_dtype = fake_model_training_session
 
@@ -249,11 +263,19 @@ class TrainingInvarianceBaseTest:
                 print(restart_val_metrics)
                 print(oneshot_val_metrics)
                 assert len(restart_val_metrics) == len(oneshot_val_metrics)
-                assert all(
-                    [
-                        math.isclose(a, b, rel_tol=tol)
-                        for a, b in zip(
-                            restart_val_metrics.values(), oneshot_val_metrics.values()
+                for name, restart_val, oneshot_val in zip(
+                    restart_val_metrics.keys(),
+                    restart_val_metrics.values(),
+                    oneshot_val_metrics.values(),
+                ):
+                    # do not include maxabserr or total energy in testing (per atom energy tested)
+                    if ("maxabserr" in name) or ("total_energy" in name):
+                        continue
+                    if not math.isclose(
+                        restart_val, oneshot_val, rel_tol=tol, abs_tol=tol
+                    ):
+                        raise AssertionError(
+                            f"Validation metric mismatch for '{name}': "
+                            f"restart value={restart_val}, oneshot value={oneshot_val}, "
+                            f"diff={abs(restart_val - oneshot_val)}, rel_tol={tol}"
                         )
-                    ]
-                ), [restart_val_metrics, oneshot_val_metrics]

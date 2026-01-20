@@ -2,34 +2,70 @@
 
 ## Introduction
 The [Atomic Simulation Environment (ASE)](https://wiki.fysik.dtu.dk/ase/) is a popular Python package providing a framework for working with atomic data, reading and writing common formats, and running various simulations and calculations.
-
-The `nequip` package provides seamless integration of NequIP models with the standard ASE interface through an [ASE Calculator](https://wiki.fysik.dtu.dk/ase/ase/calculators/calculators.html). The {class}`~nequip.ase.NequIPCalculator` can be constructed from a model [compiled](../guide/getting-started/workflow.md#compilation) with `nequip-compile` as detailed in the [ASE calculator API](../api/ase.rst).
+NequIP provides the {class}`~nequip.ase.NequIPCalculator` for integration with ASE. See the [ASE calculator API](../api/ase.rst) for detailed documentation.
 
 ## Creating an ASE Calculator
 
-The following code block shows how to build an ASE {class}`~nequip.ase.NequIPCalculator` from a compiled model file.
+To use a NequIP framework model with ASE, you need to follow these steps:
+
+1. **Start with a trained model**: You can begin with either a [checkpoint file](../guide/getting-started/files.md#checkpoint-files) (`.ckpt`) from training or a [packaged model file](../guide/getting-started/files.md#package-files) (`.nequip.zip`). See the [file types documentation](../guide/getting-started/files.md) for more details about these formats.
+
+2. **Compile the model for ASE**: Use `nequip-compile` with the `--target ase` flag to create a compiled model suitable for ASE integration:
+
+   ```bash
+   nequip-compile \
+     path/to/model.ckpt \
+     path/to/compiled_model.nequip.pt2 \
+     --device cuda \  # or "cpu"
+     --mode aotinductor \
+     --target ase
+   ```
+
+   The device specified during compilation should match the device you'll use with the calculator. For more details about compilation options and requirements, see the [compilation workflow documentation](../guide/getting-started/workflow.md#compilation).
+
+3. **Create the ASE calculator**: Build an ASE {class}`~nequip.ase.NequIPCalculator` from the compiled model file:
 
 ```python
 from nequip.ase import NequIPCalculator
 
 calculator = NequIPCalculator.from_compiled_model(
     compile_path="path/to/compiled_model.nequip.pt2",
-    device="cpu",  # "cuda" for GPUs, etc
+    device="cuda",  # or "cpu"
 )
 ```
 
 ### Mapping types from NequIP to ASE
-As can be seen in the [ASE calculator API](../api/ase.rst), the  `chemical_symbols` argument is optional. ASE models the types of atoms with their atomic numbers, or correspondingly, chemical symbols. The NequIP framework, on the other hand, can handle an arbitrary number of atom types with arbitrary alphanumeric names. If `chemical_symbols` is not specified, by default, `nequip` assumes that the `nequip` model's types (see [nequip.model](../api/model.rst)) are named after chemical symbols, and maps the atoms from ASE accordingly.
+ASE represents atom types using atomic numbers and chemical symbols (H, C, O, etc.).
+The NequIP framework can handle arbitrary alphanumeric atom type names.
+The `chemical_species_to_atom_type_map` argument controls how chemical species from ASE structures map to the model's atom types.
 
-If this is not the case, or if you want to silence the warning from not providing `chemical_symbols`, then explicitly provide `chemical_symbols`, either as list of `nequip` type names or the type mapping from chemical species in ASE to the `nequip` type names:
+**Default behavior (with warning):** If not specified, the calculator assumes model type names are chemical symbols and uses an identity mapping. A warning is issued to alert you of this assumption:
 
 ```python
-from nequip.ase import NequIPCalculator
-
 calculator = NequIPCalculator.from_compiled_model(
     compile_path="path/to/compiled_model.nequip.pt2",
-    device="cpu",  # "cuda", etc.
-    chemical_symbols={"H": "myHydrogen", "C": "someCarbonType"}
+    device="cuda",
+    # Omitting chemical_species_to_atom_type_map triggers a warning
+)
+```
+
+**Explicit identity mapping (no warning):** When you know the model type names correspond exactly to chemical species, set `chemical_species_to_atom_type_map=True` to silence the warning:
+
+```python
+calculator = NequIPCalculator.from_compiled_model(
+    compile_path="path/to/compiled_model.nequip.pt2",
+    device="cuda",
+    chemical_species_to_atom_type_map=True  # identity mapping, no warning
+)
+```
+
+**Custom mapping:** If the model uses non-standard type names (e.g., charge states, coarse-grained types), provide an explicit mapping dict:
+
+```python
+calculator = NequIPCalculator.from_compiled_model(
+    compile_path="path/to/compiled_model.nequip.pt2",
+    device="cuda",
+    chemical_species_to_atom_type_map={"H": "H+", "C": "C_sp3", "O": "O-"}
 )
 ```
 
@@ -37,7 +73,7 @@ calculator = NequIPCalculator.from_compiled_model(
 The ASE convention uses eV energy units and Å length units while the NequIP framework follows the ([internally consistent](../guide/reference/faq.md#units)) units of the underlying dataset. If it is necessary to account for units conversions, users should specify conversion factors with the arguments `energy_units_to_eV` and `length_units_to_A` (see [ASE calculator API](../api/ase.rst)).
 
 ## Example Usage
-The NequIP ASE calculator can then be used for standard ASE operations. Below are a few (nonexhaustive) common examples.
+The NequIP ASE calculator can then be used for standard ASE operations. Below are a few (non-exhaustive) common examples.
 
 ### Energy-Volume Curve
 Here we use the NequIP model trained in the tutorial to compute energies and forces on various structures to create an energy volume curve.
@@ -51,9 +87,9 @@ import torch
 
 # Initialize the nequip calculator
 calculator = NequIPCalculator.from_compiled_model(
-    compile_path="path/to/compiled_model.nequip.pt2", 
-    chemical_symbols=["Si"], 
-    device="cuda" if torch.cuda.is_available() else "cpu",  
+    compile_path="path/to/compiled_model.nequip.pt2",
+    chemical_species_to_atom_type_map={"Si": "Si"},
+    device="cuda" if torch.cuda.is_available() else "cpu",
 )  # use GPUs if available
 
 # Range of scaling factors for lattice constant
@@ -116,7 +152,7 @@ force_max = 0.05  # run until the forces are smaller than this in eV/A
 
 # Initialize Nequip ASE Calculator from checkpoint
 calculator = NequIPCalculator.from_compiled_model(
-    compile_path=compile_path, 
+    compile_path=compile_path,
     device="cuda" if torch.cuda.is_available() else "cpu",
 )  # use GPUs if available
 

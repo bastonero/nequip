@@ -8,6 +8,69 @@ Most recent change on the top.
 
 ## Unreleased
 
+
+## [0.16.3]
+
+### Added
+- Zenodo archiving
+
+### Fixed
+- syntax in `CITATION.cff`, verified with `cffconvert --validate -i CITATION.cff`
+
+## [0.16.2]
+
+### Added
+- possibility of configuring nonlinear readout MLP for NequIP GNN models
+
+### Changed
+- bumped minimum e3nn version to 0.5.9
+
+### Fixed
+- added missing `Ru` element in the `TM23DataModule`
+- https://github.com/mir-group/nequip/issues/578
+
+## [0.16.1]
+
+### Fixed
+- Made torch-sim integration optional: removed `torchsim` import from `nequip.integrations.__init__.py` to prevent import errors when `torch_sim` is not installed. This allows other integration tools (e.g., `nequip-prepare-lmp-mliap`) to work without requiring `torch_sim` as a dependency.
+
+## [0.16.0]
+
+### Added
+- users can specify having irreps of different multiplicites in `NequIPGNNModel` by providing `num_features` that is a list of `l_max + 1` features. E.g. for `l_max=2` and `parity=False`, `num_features=[5, 2, 7]` refers to `5x0e`, `2x1o` and `7x2e` features (see `configs/tutorial.yaml` for an example)
+- users can specify `type_embed_num_features` as a separate hyperparameter to control the number of features in the type embedding layer (defaults to `num_features[0]`)
+- batched AOTI inference
+- per-edge-type cutoff can now lead to cost reduction in the LAMMPS ML-IAP interface
+- optional `--constant-fold` acceleration argument for `nequip-compile --mode aotinductor` that can provide small speed ups for PyTorch >= 2.8 (may fail with some models, please open issues if that such instances are encountered)
+- OpenEquivariance is now compatible with AOTInductor compilation for ASE inference with PyTorch >= 2.9
+- better handling of datasets where stresses are partially populated, e.g. `AddNaNStressTransform` added to add NaN stress tensors for structures without stress data
+- automatic caching for nequip.net models
+- per-type average number of neighbors normalization option
+- torch-sim integration with `NequIPTorchSimCalc` for batched GPU evaluation of compiled NequIP and Allegro models
+
+### Removed
+- [Breaking] `NequIPGNNEnergyModel` has been removed. Energy-only models can be constructed by using `NequIPGNNModel` with a new argument `do_derivatives=False`
+
+### Changed
+- Simplified metrics manager wrappers now include maximum absolute error metrics
+- [Breaking] `ChemicalSpeciesToAtomTypeMapper` and `NequIPCalculator` API changed for safety and better UI with regards to atom types when using pretrained models
+- [Breaking] raise minimum PyTorch version for OpenEquivariance to PyTorch >= 2.7 (previously >= 2.4)
+
+
+## [0.15.0]
+
+### Added
+- Possible to now use `ChainedScheduler` and `SequentialLR` for LR scheduling
+- Auto-download capabilities for pretrained potentials from [nequip.net](https://www.nequip.net/)
+
+### Changed
+- Loosen LAMMPS ML-IAP constraints of using absolute paths and ensuring that the original checkpoint or package file is present in the same exact location during ML-IAP runtime
+
+### Fixed
+- OpenEquivariance accelerated compiled training with PyTorch 2.8
+- `NequIPCalculator` usage restrictions are loosened, e.g. when mixing ASE calculators
+
+
 ## [0.14.0]
 
 ### Added
@@ -201,7 +264,7 @@ A major backwards-incompatible update with breaking changes throughout the code.
 - Work with `wandb>=0.13.8`
 - Better error for standard deviation with too few data
 - `load_model_state` GPU -> CPU
-- No negative volumes in rare cases 
+- No negative volumes in rare cases
 
 ### Removed
 - [Breaking] `fixed_fields` machinery (`npz_fixed_field_keys` is still supported, but through a more straightforward implementation)
@@ -371,7 +434,7 @@ A major backwards-incompatible update with breaking changes throughout the code.
 - No atomic numbers in networks
 - `dataset_energy_std`/`dataset_energy_mean` to `dataset_total_energy_*`
 - `nequip.dynamics` -> `nequip.ase`
-- update example.yaml and full.yaml with better defaults, new loss function, and switched to toluene-ccsd(t) as example 
+- update example.yaml and full.yaml with better defaults, new loss function, and switched to toluene-ccsd(t) as example
 data
 - `use_sc` defaults to `True`
 - `register_fields` is now in `nequip.data`

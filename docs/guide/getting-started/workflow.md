@@ -34,7 +34,7 @@ The command line interface of `nequip-train` is managed by Hydra, and complete d
 
 The flags `-cp` and `-cn` refer to the "config path" and "config name" respectively. If one runs `nequip-train` in the same directory where the config file is located, the `-cp` flag may be omitted. Note also that the full path is usually required if one uses `-cp`. Users who seek further configurability (e.g. using relative paths, multiple config files located in different directories, etc) are directed to the "[command line flags](https://hydra.cc/docs/advanced/hydra-command-line-flags/)" page in the Hydra docs to learn more.
 
-Working directories for output files from `nequip-train` are [managed by Hydra](https://hydra.cc/docs/tutorials/basic/running_your_app/working_directory), and users can configure how these directories are organized through [Hydra's options](https://hydra.cc/docs/configure_hydra/workdir/). 
+Working directories for output files from `nequip-train` are [managed by Hydra](https://hydra.cc/docs/tutorials/basic/running_your_app/working_directory), and users can configure how these directories are organized through [Hydra's options](https://hydra.cc/docs/configure_hydra/workdir/).
 
 ### The config file
 Under the hood, the [Hydra](https://hydra.cc/) config utilities and the [PyTorch Lightning](https://lightning.ai/docs/pytorch/stable/) framework are used to facilitate training and testing in the NequIP infrastructure. The config defines a hierarchy of objects, built by instantiating classes, usually specified in the config with `_target_`, with the parameters the user provides. The Python API of these classes exactly corresponds to the available configuration options in the config file. As a result, the Python API of these classes is the single source of truth defining valid configuration options. These classes could come from:
@@ -110,10 +110,11 @@ The packaged model can thus be loaded and used independently even if new and dif
 ### Fine-tuning packaged models
 
 Packaged models can be used for both inference and fine-tuning.  Fine-tuning uses the {func}`~nequip.model.ModelFromPackage` [model loader](../../api/save_model.rst) in the config for a new `nequip-train` run to use the model from the package as the starting point. The checkpoint files produced by this kind of fine-tuning `nequip-train` run can be used as usual and support restarting training with `++ckpt_path path/to/ckpt`, further fine-tuning using {func}`~nequip.model.ModelFromCheckpoint`, `nequip-compile`, `nequip-package`, etc.
+See the [Fine-Tuning](../training-techniques/fine_tuning.md) training techniques section for further details.
 
 ## Compilation
 
-`nequip-compile` is the command used to compile a model (either from a checkpoint file or a package file) for [production simulations](#production-simulations) with our various [integrations](../../integrations/all.rst). There are two compiler modes: `torchscript` and `aotinductor`, which produce compiled model files with extensions `.nequip.pth` and `.nequip.pt2` respectively. We generally recommend the newer and faster `aotinductor`, but it requires PyTorch 2.6 or later. 
+`nequip-compile` is the command used to compile a model (either from a checkpoint file or a package file) for [production simulations](#production-simulations) with our various [integrations](../../integrations/all.rst). There are two compiler modes: `torchscript` and `aotinductor`, which produce compiled model files with extensions `.nequip.pth` and `.nequip.pt2` respectively. We generally recommend the newer and faster `aotinductor`, but it requires PyTorch 2.6 or later.
 
 To compile a model with TorchScript:
 ```bash
@@ -134,12 +135,10 @@ nequip-compile \
   --target [ase|pair_nequip|pair_allegro|...]
 ```
 
-```{important}
-`nequip-compile` should be called on the same type of system and device where the compiled model will be used. This constraint may not be always be necessary for TorchScript compilation, but it is **required** for AOTInductor compilation, which specializes the model to a particular type of GPU, etc.
-```
+AOTInductor requires access to compilers like `gcc` and `nvcc` when running `nequip-compile`. Specifically, C++17 support is required, which requires `gcc` version 8 or higher (preferably >=11 where C++17 is the default). Without the proper compiler version, you may encounter errors such as `C++ compile error`, issues involving the `filesystem` standard library, or even `Segmentation fault (core dumped)`. You can check your `gcc` version with `gcc --version`, and may need to upgrade or load a specific module on your HPC system to get the required version before running `nequip-compile`.
 
 ```{important}
-AOTInductor requires access to compilers like `gcc` and `nvcc` when running `nequip-compile`. Specifically, C++17 support is required, which requires `gcc` version 8 or higher (preferably >=11 where C++17 is the default), otherwise errors involving the `filesystem` standard library will occur. You can check your `gcc` version with `gcc --version`, and may need to upgrade or load a specific module on your HPC system to get the required version.
+`nequip-compile` should be called on the same type of system and device where the compiled model will be used. This constraint may not be always be necessary for TorchScript compilation, but it is **required** for AOTInductor compilation, which specializes the model to a particular type of GPU, etc.
 ```
 
 ```{tip}
@@ -151,6 +150,27 @@ The `--target` flag wraps the `--input-fields` and `--output-fields` options. De
 ```{tip}
 If performing training and inference on separate machines, with possibly different Python, CUDA, or hardware environments, consider [packaging](#packaging) the trained model and transferring the packaged model to the inference machine and running `nequip-compile` on it there.
 ```
+
+### Compiling models from nequip.net
+
+Models from [nequip.net](https://www.nequip.net/) can be compiled directly using the `nequip.net:` syntax:
+
+```bash
+nequip-compile \
+  nequip.net:mir-group/NequIP-OAM-L:0.1 \
+  path/to/compiled_model.nequip.pt2 \
+  --device cuda \
+  --mode aotinductor \
+  --target ase
+```
+
+The format is `nequip.net:group-name/model-name:version`, where you can find the full model ID on the model's page at [nequip.net](https://www.nequip.net/).
+
+Models are automatically downloaded and cached for compilation in `~/.nequip/model_cache` (configurable via the `NEQUIP_CACHE_DIR` environment variable).
+The first compilation will download the model from the server, but subsequent compilations will use the cached model instantly.
+Cached files are validated using cryptographic hashes to ensure integrity.
+
+To bypass the cache for a single run, set `NEQUIP_NO_CACHE=1` (or `true`, `yes`, `y`). To re-enable caching, unset the variable or set it to any other value like `NEQUIP_NO_CACHE=0`.
 
 ## Production Simulations
 

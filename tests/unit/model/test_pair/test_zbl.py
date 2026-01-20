@@ -12,24 +12,27 @@ from nequip.data.transforms import (
     NeighborListTransform,
 )
 from nequip.ase import NequIPCalculator
-from nequip.utils.unittests.model_tests import BaseEnergyModelTests
+from nequip.utils.unittests.model_tests_basic import EnergyModelTestsMixin
 
 
 _ZBL_TEST_RMAX: float = 8.0  # see zbl_data.lmps
 
 
-class TestZBLModel(BaseEnergyModelTests):
+class TestZBLModel(EnergyModelTestsMixin):
+    """ZBL pair potential tests.
+
+    Inherits from EnergyModelTestsMixin directly to get basic + energy tests.
+    """
+
+    @pytest.fixture(scope="class")
+    def equivariance_tol(self, model_dtype):
+        # CI fails with at most 6e-8 errors for fp64 models for PyTorch 2.9.1
+        # so fp64 tol bumped to 1e-7
+        return {"float32": 1e-3, "float64": 1e-7}[model_dtype]
+
     @pytest.fixture
     def strict_locality(self):
         return True
-
-    @pytest.mark.skip(reason="Skip compile tests for ZBL models.")
-    def test_nequip_compile(self):
-        pass
-
-    @pytest.mark.skip(reason="Skip LAMMPS ML-IAP tests for ZBL models.")
-    def test_mliap_integration(self):
-        pass
 
     @pytest.fixture(scope="class")
     def config(self):
@@ -51,7 +54,10 @@ class TestZBLModel(BaseEnergyModelTests):
         if config["model_dtype"] == "float64":
             transforms = [
                 ChemicalSpeciesToAtomTypeMapper(
-                    chemical_symbols=config["chemical_species"],
+                    model_type_names=config["type_names"],
+                    chemical_species_to_atom_type_map={
+                        s: s for s in config["chemical_species"]
+                    },
                 ),
                 NeighborListTransform(r_max=_ZBL_TEST_RMAX),
             ]
@@ -73,7 +79,7 @@ class TestZBLModel(BaseEnergyModelTests):
                 atoms.set_atomic_numbers([int(Zi), int(Zj)])
                 # ZBL blows up for atoms being close, so the numerics differ to ours
                 # 1e-5 == 0.01 meV / Å
-                assert np.allclose(atoms.get_forces()[0, 0], fxi, atol=1e-5)
-                assert np.allclose(atoms.get_forces()[1, 0], fxj, atol=1e-5)
+                np.testing.assert_allclose(atoms.get_forces()[0, 0], fxi, atol=1e-5)
+                np.testing.assert_allclose(atoms.get_forces()[1, 0], fxj, atol=1e-5)
                 # 1e-4 == 0.1 meV system, 0.05 meV / atom
-                assert np.allclose(atoms.get_potential_energy(), pe, atol=1e-4)
+                np.testing.assert_allclose(atoms.get_potential_energy(), pe, atol=1e-4)

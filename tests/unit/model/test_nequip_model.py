@@ -1,6 +1,7 @@
 import pytest
-from nequip.utils.unittests.model_tests import BaseEnergyModelTests
-from nequip.utils.versions import _TORCH_GE_2_4
+from nequip.utils.unittests.model_tests_lammps import LAMMPSMLIAPIntegrationMixin
+from nequip.utils.unittests.model_tests_torchsim import TorchSimIntegrationMixin
+from nequip.utils.versions import _TORCH_GE_2_7
 
 try:
     import openequivariance  # noqa: F401
@@ -34,13 +35,6 @@ COMMON_CONFIG = {
     **BASIC_INFO,
 }
 
-COMMON_FULL_CONFIG = {
-    "_target_": "nequip.model.FullNequIPGNNModel",
-    "radial_mlp_depth": [1, 2],
-    "radial_mlp_width": [5, 7],
-    **BASIC_INFO,
-}
-
 minimal_config1 = dict(
     num_features=8,
     num_layers=2,
@@ -64,24 +58,31 @@ minimal_config3 = dict(
     **COMMON_CONFIG,
 )
 minimal_config4 = dict(
-    irreps_edge_sh="0e + 1o",
-    type_embed_num_features=11,
-    feature_irreps_hidden=["13x0e + 4x1o", "7x0e"],
-    convnet_nonlinearity_type="norm",
+    num_features=[7, 13, 5],
+    num_layers=2,
     # ZBL pair potential term
     pair_potential={
         "_target_": "nequip.nn.pair_potential.ZBL",
         "chemical_species": ["H", "C", "O"],
         "units": "metal",
     },
-    **COMMON_FULL_CONFIG,
+    **COMMON_CONFIG,
 )
 
 
-class TestNequIPModel(BaseEnergyModelTests):
+class TestNequIPModel(TorchSimIntegrationMixin, LAMMPSMLIAPIntegrationMixin):
+    """NequIP model tests.
+
+    Gets compilation tests via TorchSimIntegrationMixin → CompilationTestsMixin.
+    """
+
     @pytest.fixture
     def strict_locality(self):
         return False
+
+    @pytest.fixture(scope="class")
+    def equivariance_tol(self, model_dtype):
+        return {"float32": 5e-5, "float64": 1e-7}[model_dtype]
 
     @pytest.fixture(
         params=[
@@ -100,7 +101,7 @@ class TestNequIPModel(BaseEnergyModelTests):
     @pytest.fixture(
         scope="class",
         params=[None]
-        + (["enable_OpenEquivariance"] if _TORCH_GE_2_4 and _OEQ_INSTALLED else [])
+        + (["enable_OpenEquivariance"] if _TORCH_GE_2_7 and _OEQ_INSTALLED else [])
         + (["enable_CuEquivariance"] if _CUEQ_INSTALLED else []),
     )
     def nequip_compile_acceleration_modifiers(self, request):
@@ -111,10 +112,11 @@ class TestNequIPModel(BaseEnergyModelTests):
         def modifier_handler(mode, device, model_dtype):
             if request.param == "enable_OpenEquivariance":
                 import openequivariance  # noqa: F401,F811
+                from nequip.utils.versions import _TORCH_GE_2_9
 
-                # TODO: test when ready (maybe PyTorch 2.8.1 or 2.9.0)
-                if mode == "aotinductor":
-                    pytest.skip("OEQ AOTI tests skipped for now")
+                # OEQ + AOTI requires PyTorch >= 2.9
+                if mode == "aotinductor" and not _TORCH_GE_2_9:
+                    pytest.skip("OEQ AOTI requires PyTorch >= 2.9")
 
                 if device == "cpu":
                     pytest.skip("OEQ tests skipped for CPU")
@@ -139,7 +141,7 @@ class TestNequIPModel(BaseEnergyModelTests):
     @pytest.fixture(
         scope="class",
         params=[None]
-        + (["enable_OpenEquivariance"] if _TORCH_GE_2_4 and _OEQ_INSTALLED else []),
+        + (["enable_OpenEquivariance"] if _TORCH_GE_2_7 and _OEQ_INSTALLED else []),
         # + (["enable_CuEquivariance"] if _CUEQ_INSTALLED else []),
         # NOTE: ^ some tests fail with CuEq
     )
@@ -172,7 +174,7 @@ class TestNequIPModel(BaseEnergyModelTests):
     @pytest.fixture(
         scope="class",
         params=[None]
-        + (["enable_OpenEquivariance"] if _TORCH_GE_2_4 and _OEQ_INSTALLED else [])
+        + (["enable_OpenEquivariance"] if _TORCH_GE_2_7 and _OEQ_INSTALLED else [])
         + (["enable_CuEquivariance"] if _CUEQ_INSTALLED else []),
     )
     def mliap_acceleration_modifiers(self, request):

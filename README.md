@@ -4,16 +4,19 @@
 
 <br/>
 
-[![Documentation Status](https://readthedocs.org/projects/nequip/badge/?version=latest)](https://nequip.readthedocs.io/en/latest/?badge=latest)  [![PyPI version](https://img.shields.io/pypi/v/nequip.svg)](https://pypi.python.org/pypi/nequip/)
+[![Documentation Status](https://readthedocs.org/projects/nequip/badge/?version=latest)](https://nequip.readthedocs.io/en/latest/?badge=latest)  [![PyPI version](https://img.shields.io/pypi/v/nequip.svg)](https://pypi.python.org/pypi/nequip/)  [![DOI](https://zenodo.org/badge/348154786.svg)](https://doi.org/10.5281/zenodo.18200066)
 
 
 
 # NequIP
 
 NequIP is an open-source code for building E(3)-equivariant interatomic potentials.
- 
+
  - [Installation and usage](#installation-and-usage)
  - [Tutorial](#tutorial)
+ - [Pre-trained models](#pre-trained-models)
+ - [Highlighted Features](#highlighted-features)
+ - [Extension Packages](#extension-packages)
  - [References & citing](#references--citing)
  - [Authors](#authors)
  - [Community, contact, questions, and contributing](#community-contact-questions-and-contributing)
@@ -25,30 +28,29 @@ NequIP is an open-source code for building E(3)-equivariant interatomic potentia
 
 Installation instructions and user guides can be found in our [docs](https://nequip.readthedocs.io/en/latest/).
 
-## Tutorial 
+## Tutorial
 
 The best way to learn how to use NequIP is through the [tutorial notebook](https://colab.research.google.com/github/mir-group/nequip-tutorial/blob/main/NequIP_Tutorial.ipynb). This will run entirely on Google Colab's cloud virtual machine; you do not need to install or run anything locally.
+
+## Pre-trained models
+
+Pre-trained models can be found at [nequip.net](https://www.nequip.net/).
 
 ## Highlighted Features
 
 The following are some notable features, with quick links for more details:
 
-- [Compiled training](https://nequip.readthedocs.io/en/latest/guide/accelerations/pt2_compilation.html) and [compiled inference](https://nequip.readthedocs.io/en/latest/guide/getting-started/workflow.html#compilation)  
-- [Multi-GPU training](https://nequip.readthedocs.io/en/latest/guide/accelerations/ddp_training.html)  
-- [GPU kernel accelerations](https://nequip.readthedocs.io/en/latest/guide/accelerations/gpu_kernel_modifiers.html) with [OpenEquivariance](https://github.com/PASSIONLab/OpenEquivariance) and [CuEquivariance](https://github.com/NVIDIA/cuEquivariance)  
+- [Compiled training](https://nequip.readthedocs.io/en/latest/guide/accelerations/pt2_compilation.html) and [compiled inference](https://nequip.readthedocs.io/en/latest/guide/getting-started/workflow.html#compilation)
+- [Multi-GPU training](https://nequip.readthedocs.io/en/latest/guide/accelerations/ddp_training.html)
+- [GPU kernel accelerations](https://nequip.readthedocs.io/en/latest/guide/accelerations/gpu_kernel_modifiers.html) with [OpenEquivariance](https://github.com/PASSIONLab/OpenEquivariance) and [CuEquivariance](https://github.com/NVIDIA/cuEquivariance) (alpha)
+- [ASE calculator integration](https://nequip.readthedocs.io/en/latest/integrations/ase.html) and [LAMMPS integrations](https://nequip.readthedocs.io/en/latest/integrations/lammps/index.html) through the pair styles in [`pair_nequip_allegro`](https://nequip.readthedocs.io/en/latest/integrations/lammps/pair_styles.html) and our LAMMPS [ML-IAP integration](https://nequip.readthedocs.io/en/latest/integrations/lammps/mliap.html).
 
 ## Extension Packages
 
 The NequIP software framework is designed to be flexible and extensible: you can build custom architectures, implement new training techniques, and develop additional methods on top of it through extension packages.
 If you're interested in developing your own extension package, please refer to the [extension package docs](https://nequip.readthedocs.io/en/latest/dev/extension_packages.html) and consider [joining our Zulip](https://forms.gle/mEuonVCHdsgTtLXy7) for developer-focused discussions and collaborations.
 
-Notable examples of NequIP framework extension packages include
-
-- **Allegro** ([GitHub](https://github.com/mir-group/allegro), [Docs](https://nequip.readthedocs.io/projects/allegro/en/latest/?badge=latest), [Paper](https://www.nature.com/articles/s41467-023-36329-y)):  
-  Strictly local equivariant models with excellent scalability for multirank molecular dynamics simulations.
-- **NequIP-LES** ([GitHub](https://github.com/ChengUCB/NequIP-LES), [Paper](https://arxiv.org/abs/2507.14302)):  
-  An extension of NequIP and Allegro that adds long-range electrostatics via the Latent Ewald Summation (LES) algorithm.
-
+A notable example of a NequIP framework extension package is the [`allegro`](https://github.com/mir-group/allegro) package that implements the strictly local equivariant interatomic potential architecture, [Allegro](https://www.nature.com/articles/s41467-023-36329-y). More extension packages can be found at https://www.nequip.net/extensions.
 
 ## References & citing
 
@@ -66,9 +68,9 @@ And also consider citing:
  2. The [original NequIP paper](https://www.nature.com/articles/s41467-022-29939-5)
     > Simon Batzner, Albert Musaelian, Lixin Sun, Mario Geiger, Jonathan P. Mailoa, Mordechai Kornbluth, Nicola Molinari, Tess E. Smidt, and Boris Kozinsky. <br/>
     > "E(3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials." <br/>
-    > Nature communications 13, no. 1 (2022): 2453
+    > Nature Communications 13, no. 1 (2022): 2453
 
- 3. The [computational scaling paper](https://dl.acm.org/doi/abs/10.1145/3581784.3627041) that discusses optimized LAMMPS MD 
+ 3. The [computational scaling paper](https://dl.acm.org/doi/abs/10.1145/3581784.3627041) that discusses optimized LAMMPS MD
     > Albert Musaelian, Anders Johansson, Simon Batzner, and Boris Kozinsky. <br/>
     > "Scaling the leading accuracy of deep equivariant models to biomolecular simulations of realistic size." <br/>
     > In Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis, pp. 1-12. 2023.
