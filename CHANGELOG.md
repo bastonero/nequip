@@ -8,6 +8,35 @@ Most recent change on the top.
 
 ## Unreleased
 
+## [0.17.1]
+
+### Added
+- `dataset` as a built-in `AtomicDataDict` graph/long field (`AtomicDataDict.DATASET_KEY`) and `nequip.data.transforms.DatasetIndexTransform` for multi-dataset workflows
+
+### Fixed
+- compatibility with `alchemiops` v0.3.0 neighborlist
+
+## [0.17.0]
+
+### Added
+- train-time compilation support for models with different input-output key signatures - enables holding multiple compiled models with different signatures
+- documentation section on known PyTorch version issues
+- convenience resolver `${cutoff_radius_from_package:${model_path}}` to extract cutoff radius for fine-tuning directly in config file
+- `PresetNequIPGNNModel` model builder with `S`/`M`/`L`/`XL` architecture presets and explicit-argument override behavior
+- docs linking to updated OpenMM integration
+- `alchemiops` neighborlist backend support
+
+### Changed
+- overhauled `NonperiodicCellTransform` with improved handling
+- models compiled for training now produce full set of eager output dict entries
+- `NequIPCalculator` canonical import path is now `nequip.integrations.ase.NequIPCalculator`; `nequip.ase.NequIPCalculator` remains as a deprecated compatibility shim that emits a `FutureWarning`
+- [breaking] `NEQUIP_NL` environment variable no longer controls neighborlist backend selection. Neighborlist backend can be set explicitly via `NeighborListTransform(..., backend="...")`; default behavior is unchanged (`matscipy`).
+- Added `register_neighborlist_backend` to support extensible neighborlist backend registration.
+
+### Fixed
+- PyTorch 2.10.0 tracing error for `silu_backward`
+- PyTorch 2.10.0 AOTI codecache error
+- https://github.com/mir-group/nequip/issues/572
 
 ## [0.16.3]
 

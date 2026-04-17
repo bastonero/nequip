@@ -37,7 +37,7 @@ nequip-compile \
     --modifiers enable_CuEquivariance
 ```
 
-### ASE TorchScript Compilation
+### ASE TorchScript Compilation (PyTorch < 2.10 only)
 
 ```bash
 nequip-compile \
@@ -53,7 +53,7 @@ To use the compiled model, you must import `cuequivariance_torch` before loading
 
 ```python
 import cuequivariance_torch
-from nequip.ase import NequIPCalculator
+from nequip.integrations.ase import NequIPCalculator
 
 # Load the compiled model
 calc = NequIPCalculator.from_compiled_model(

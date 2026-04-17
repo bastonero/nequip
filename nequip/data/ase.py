@@ -18,9 +18,9 @@ from typing import Dict, Union, List, Optional
 
 def from_ase(
     atoms: ase.Atoms,
-    key_mapping: Optional[Dict[str, str]] = {},
-    include_keys: Optional[List] = [],
-    exclude_keys: Optional[List] = [],
+    key_mapping: Optional[Dict[str, str]] = None,
+    include_keys: Optional[List] = None,
+    exclude_keys: Optional[List] = None,
 ) -> AtomicDataDict.Type:
     """Build an ``AtomicDataDict`` from an ``ase.Atoms`` object.
 
@@ -35,6 +35,11 @@ def from_ase(
         include_keys (Optional[List]): list of additional keys to include in AtomicData aside from the ones defined in ``ase.calculators.calculator.all_properties``
         exclude_keys (Optional[List]): list of keys that may be present in the ``ase.Atoms`` object but the user wishes to exclude
     """
+
+    # normalize optional inputs to avoid shared mutable defaults
+    key_mapping = {} if key_mapping is None else key_mapping
+    include_keys = [] if include_keys is None else include_keys
+    exclude_keys = [] if exclude_keys is None else exclude_keys
 
     default_args = set(
         [
@@ -146,10 +151,18 @@ def from_ase(
 
     # c.f. https://gitlab.com/ase/ase/-/blob/master/ase/atoms.py?ref_type=heads#L114
 
+    pbc = np.asarray(atoms.get_pbc(), dtype=bool)
+    cell = np.asarray(atoms.get_cell())
+    if bool(pbc.any()) and bool(np.allclose(cell, 0.0)):
+        raise ValueError(
+            f"Invalid ASE Atoms input: pbc={pbc} but cell is zero. "
+            "Fix upstream data so periodic structures provide a non-zero cell."
+        )
+
     data = {
         AtomicDataDict.POSITIONS_KEY: atoms.positions,
-        AtomicDataDict.CELL_KEY: np.array(atoms.get_cell()),
-        AtomicDataDict.PBC_KEY: atoms.get_pbc(),
+        AtomicDataDict.CELL_KEY: cell,
+        AtomicDataDict.PBC_KEY: pbc,
         AtomicDataDict.ATOMIC_NUMBERS_KEY: atoms.get_atomic_numbers(),
     }
     data.update(**add_fields)
@@ -159,7 +172,7 @@ def from_ase(
 def to_ase(
     data: AtomicDataDict.Type,
     chemical_symbols: Optional[List[str]] = None,
-    extra_fields: List[str] = [],
+    extra_fields: Optional[List[str]] = None,
 ) -> Union[List[ase.Atoms], ase.Atoms]:
     """Build a (list of) ``ase.Atoms`` object(s) from an ``AtomicData`` object.
 
@@ -180,6 +193,9 @@ def to_ase(
         A list of ``ase.Atoms`` objects if ``AtomicDataDict.BATCH_KEY`` is in self
         and is not None. Otherwise, a single ``ase.Atoms`` object is returned.
     """
+    # normalize optional inputs to avoid shared mutable defaults
+    extra_fields = [] if extra_fields is None else extra_fields
+
     # === sanity check ===
     # exclude those that are special for ASE and that we process seperately
     special_handling_keys = [

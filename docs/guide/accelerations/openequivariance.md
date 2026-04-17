@@ -52,7 +52,7 @@ OpenEquivariance is supported for inference with:
 
 First, compile your model with OpenEquivariance support using either TorchScript or AOT Inductor:
 
-**TorchScript compilation:**
+**TorchScript compilation (PyTorch < 2.10 only):**
 ```bash
 nequip-compile /path/to/model.ckpt /path/to/compiled_model.nequip.pth \
   --mode torchscript \
@@ -74,7 +74,7 @@ To use the compiled model with ASE, you must explicitly import OpenEquivariance 
 
 ```python
 import openequivariance  # Required: must import before loading compiled model
-from nequip.ase import NequIPCalculator
+from nequip.integrations.ase import NequIPCalculator
 
 # Load the compiled model
 calc = NequIPCalculator.from_compiled_model(
